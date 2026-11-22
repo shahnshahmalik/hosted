@@ -9,18 +9,50 @@ is used everywhere:
 |---|---|---|
 | `builtin` | `widgets/<id>/` in this repo, seeded on startup | only by editing the repo |
 | `ai` | written by the assistant (`save_widget_type` tool) | the assistant |
-| `installed` | (planned) a GitHub repo/folder, recorded in `origin` | only by reinstalling/updating |
+| `installed` | a GitHub repo/folder, pinned to a commit and recorded in `origin` | only by updating from GitHub |
 
-Each type has a `version` that increases on every change; open instances reload automatically.
+Each type has a `revision` that increases on every change; open instances reload automatically.
 Permissions are always granted per instance by the user (the picker's Add, or the Allow bar),
 whoever wrote the widget, and a new version can never silently widen access.
+
+## Publishing a widget
+
+1. Build it: write `manifest.json` + `index.html` by hand, or ask the assistant to make one.
+2. Export it: **+ Add widget → Library → Download .zip** gives you `<id>/manifest.json`,
+   `<id>/index.html` and a `README.md`. Fill in `author` and bump `version` in the manifest.
+3. Publish it: push the folder to a GitHub repository. One widget per repo (files at the root)
+   or a collection (one folder per widget, up to 3 levels deep) both work.
+4. Share the link. Others install it with **+ Add widget → Install from GitHub**, using any of:
+   - `https://github.com/you/repo` (default branch; shows every widget in the repo)
+   - `https://github.com/you/repo/tree/v1.0/weather-pro` (a tag or branch, one folder)
+   - `https://github.com/you/repo/blob/main/weather-pro/manifest.json`
+
+How installing works:
+
+- **Preview, then install the same commit.** The preview resolves the branch/tag to a commit SHA
+  and shows name, author, version, permissions, size and a source link. Install fetches exactly
+  that commit, so what the user reviewed is what runs.
+- **Updates.** "Check for updates" compares each installed widget's commit with the latest commit
+  of the branch/tag it was installed from. Updating keeps the widget id and every placed instance;
+  any newly requested hosts or secrets show an Allow bar instead of being granted silently.
+- **Ids.** The manifest `id` (or folder name) is used; if taken, it is prefixed with the GitHub
+  owner (e.g. `acme-weather`). Reinstalling from the same repo/folder updates the same id.
+- **Private repos** need a `GITHUB_TOKEN` secret; the server sends it only to GitHub's API and raw
+  file hosts, never to widgets.
+- Limits: `index.html` up to 200 KB, `manifest.json` up to 64 KB, 50 packages per preview. Branch
+  names containing `/` aren't supported in URLs; use a tag or another branch.
 
 ## manifest.json
 
 ```json
 {
+  "id": "weather",
   "name": "Weather",
   "description": "Shown in the picker",
+  "version": "1.2.0",
+  "author": "Your Name",
+  "homepage": "https://github.com/you/hosted-widgets",
+  "license": "MIT",
   "size": { "w": 3, "h": 3 },
   "permissions": { "hosts": ["api.open-meteo.com", "*.example.com", "192.168.1.5:8080"], "secrets": ["API_KEY"] },
   "props": { "city": { "type": "string|number|boolean|select", "label": "City", "default": "Berlin", "options": [] } }

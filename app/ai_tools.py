@@ -208,9 +208,9 @@ def run_tool(name: str, args, frame_errors=None) -> tuple[str, bool, str]:
             d = store.save_def(c, t, manifest, code, source="ai")
             users = [w for w in store.list_widgets(c) if w["config"].get("type") == t]
             needs = [w["id"] for w in users if any(w["pending"].values())]
-            res = {"saved": t, "version": d["version"], "instances": [w["id"] for w in users],
+            res = {"saved": t, "revision": d["revision"], "instances": [w["id"] for w in users],
                    "instances_awaiting_user_permission": needs}
-            return json.dumps(res), True, f"Saved widget type {d['name']} (v{d['version']})"
+            return json.dumps(res), True, f"Saved widget type {d['name']} (rev {d['revision']})"
 
         if name == "delete_widget_type":
             t = _str(args, "type", True)

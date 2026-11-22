@@ -128,7 +128,7 @@ function App() {
     return () => removeEventListener("message", onMessage);
   }, []);
 
-  const frameKey = (w) => `${w.id}:${defs[w.config.type]?.version || 0}:${nonces[w.id] || 0}`;
+  const frameKey = (w) => `${w.id}:${defs[w.config.type]?.revision || 0}:${nonces[w.id] || 0}`;
   const onFrameLoad = (wid, key, el) => {
     // Each frame key is a fresh iframe element. Its first load is our document; any later
     // load means the widget navigated itself away.
@@ -282,7 +282,7 @@ function App() {
     ${chatOpen && html`<${Chat} onChanged=${refresh} onClose=${() => setChatOpen(false)}
         frameErrors=${() => Object.fromEntries(Object.entries(frameErrors).filter(([, v]) => v))} />`}
     </div>
-    ${modal === "picker" && html`<${Picker} defs=${Object.values(defs)} secretNames=${secretNames}
+    ${modal === "picker" && html`<${Picker} defs=${Object.values(defs)} secretNames=${secretNames} onDefsChanged=${refresh}
         onClose=${() => setModal(null)} onAdd=${(d) => { add(d); setModal(null); }} />`}
     ${modal === "secrets" && html`<${Secrets} names=${secretNames} defs=${Object.values(defs)}
         onChange=${setSecretNames} onClose=${() => setModal(null)} />`}`;
@@ -308,21 +308,134 @@ function Permissions({ perms, secretNames }) {
   </div>`;
 }
 
-function Picker({ defs, secretNames, onClose, onAdd }) {
+const shortSha = (sha) => (sha || "").slice(0, 7);
+const originLabel = (o) => (o ? `${o.owner}/${o.repo}${o.path ? "/" + o.path : ""}` : "");
+
+function DefMeta({ d }) {
+  const bits = [d.version && `v${d.version}`, d.author && `by ${d.author}`].filter(Boolean);
+  return html`${d.source === "ai" && html`<span class="tag">made by AI</span>`}
+    ${d.source === "installed" && html`<span class="tag" title=${"Installed from " + originLabel(d.origin) + " @ " + shortSha(d.origin?.sha)}>
+      ${originLabel(d.origin)} @ ${shortSha(d.origin?.sha)}</span>`}
+    ${bits.length > 0 && html`<span class="muted small"> ${bits.join(" · ")}</span>`}`;
+}
+
+function Picker({ defs, secretNames, onClose, onAdd, onDefsChanged }) {
+  const [tab, setTab] = useState("library");
+  const [updates, setUpdates] = useState(null); // {id: {latest, ref} | {error}}
+  const [checking, setChecking] = useState(false);
+  const [busy, setBusy] = useState(null);
+  const [err, setErr] = useState(null);
+  const installed = defs.filter((d) => d.source === "installed");
+
+  const checkUpdates = async () => {
+    setChecking(true); setErr(null);
+    try { setUpdates(Object.fromEntries((await api("/plugins/updates")).map((u) => [u.id, u]))); }
+    catch (x) { setErr(x.message); }
+    finally { setChecking(false); }
+  };
+  const doUpdate = async (d) => {
+    setBusy(d.id); setErr(null);
+    try {
+      await api(`/plugins/${d.id}/update`, "POST");
+      setUpdates((u) => ({ ...u, [d.id]: undefined }));
+      await onDefsChanged();
+    } catch (x) { setErr(x.message); } finally { setBusy(null); }
+  };
+  const remove = async (d) => {
+    if (!confirm(`Remove the widget type “${d.name}”? Widgets using it must be removed first.`)) return;
+    setErr(null);
+    try { await api(`/widget-defs/${d.id}`, "DELETE"); await onDefsChanged(); } catch (x) { setErr(x.message); }
+  };
+
   return html`<${Modal} title="Add widget" onClose=${onClose}>
-    <p class="muted small">Adding a widget grants it the permissions listed. It runs in a sandbox and can only reach these hosts through the server.</p>
-    <div class="def-list">
-      ${defs.map((d) => html`
-        <div class="def" data-def=${d.id}>
-          <div class="def-main">
-            <b>${d.name}</b>${d.source !== "builtin" && html`<span class="tag">${d.source === "ai" ? "made by AI" : d.source}</span>`}
-            <div class="muted small">${d.description}</div>
-            <${Permissions} perms=${d.permissions} secretNames=${secretNames} />
-          </div>
-          <button onClick=${() => onAdd(d)}>Add</button>
-        </div>`)}
+    <div class="tabs">
+      <button class=${tab === "library" ? "active" : "ghost"} onClick=${() => setTab("library")}>Library</button>
+      <button class=${tab === "github" ? "active" : "ghost"} onClick=${() => setTab("github")}>Install from GitHub</button>
     </div>
+    ${err && html`<div class="error small">${err}</div>`}
+    ${tab === "library" ? html`
+      <p class="muted small">Adding a widget grants it the permissions listed. It runs in a sandbox and can only reach these hosts through the server.
+        ${installed.length > 0 && html` <button class="ghost small" disabled=${checking} onClick=${checkUpdates}>${checking ? "Checking…" : "Check for updates"}</button>`}</p>
+      <div class="def-list">
+        ${defs.map((d) => {
+          const up = updates?.[d.id];
+          return html`
+          <div class="def" data-def=${d.id}>
+            <div class="def-main">
+              <b>${d.name}</b> <${DefMeta} d=${d} />
+              <div class="muted small">${d.description}</div>
+              <${Permissions} perms=${d.permissions} secretNames=${secretNames} />
+              <div class="def-tools">
+                <a class="linkbtn" href=${`/api/widget-defs/${d.id}/export`} download title="Download as a package you can publish on GitHub">Download .zip</a>
+                ${d.source !== "builtin" && html`<button class="ghost small" onClick=${() => remove(d)}>Remove</button>`}
+                ${up && !up.error && html`<button class="small" disabled=${busy === d.id} onClick=${() => doUpdate(d)}>
+                  ${busy === d.id ? "Updating…" : `Update to ${shortSha(up.latest)}`}</button>`}
+                ${up?.error && html`<span class="error small">${up.error}</span>`}
+                ${updates && !up && d.source === "installed" && html`<span class="muted small">Up to date</span>`}
+              </div>
+            </div>
+            <button onClick=${() => onAdd(d)}>Add</button>
+          </div>`;
+        })}
+      </div>`
+    : html`<${GithubInstall} secretNames=${secretNames} onInstalled=${onDefsChanged} onAdd=${onAdd} />`}
   <//>`;
+}
+
+function GithubInstall({ secretNames, onInstalled, onAdd }) {
+  const [url, setUrl] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(null);
+  const [done, setDone] = useState({}); // path -> installed def
+
+  const load = async (e) => {
+    e.preventDefault();
+    setLoading(true); setErr(null); setPreview(null); setDone({});
+    try { setPreview(await api("/plugins/preview", "POST", { url })); }
+    catch (x) { setErr(x.message); } finally { setLoading(false); }
+  };
+  const install = async (p) => {
+    setErr(null);
+    try {
+      const d = await api("/plugins/install", "POST", { url, sha: preview.sha, path: p.path });
+      setDone((s) => ({ ...s, [p.path]: d }));
+      await onInstalled();
+    } catch (x) { setErr(x.message); }
+  };
+
+  return html`<div class="gh-install">
+    <p class="muted small">Paste a GitHub link to a widget folder (with <code>manifest.json</code> and <code>index.html</code>) or to a repository containing several. Installed widgets run in the same sandbox as every other widget, and you approve their network access before they can use it.</p>
+    <form class="row" onSubmit=${load}>
+      <input style="flex:1" placeholder="https://github.com/owner/repo/tree/main/my-widget" value=${url}
+             onInput=${(e) => setUrl(e.currentTarget.value)} />
+      <button type="submit" disabled=${!url.trim() || loading}>${loading ? "Loading…" : "Preview"}</button>
+    </form>
+    ${err && html`<div class="error small">${err}</div>`}
+    ${preview && html`
+      <div class="muted small gh-src">${preview.owner}/${preview.repo} · ${preview.ref} @ <code>${shortSha(preview.sha)}</code>
+        · ${preview.packages.length} package${preview.packages.length === 1 ? "" : "s"}</div>
+      <div class="def-list">
+        ${preview.packages.map((p) => {
+          const m = p.manifest, inst = done[p.path];
+          return html`<div class="def">
+            <div class="def-main">
+              ${m ? html`<b>${m.name}</b> <${DefMeta} d=${m} />` : html`<b>${p.path || "/"}</b>`}
+              ${m && html`<div class="muted small">${m.description}</div>`}
+              ${m && html`<${Permissions} perms=${m.permissions} secretNames=${secretNames} />`}
+              <div class="muted small">${p.path || "(repository root)"} · ${m ? Math.ceil(p.code_bytes / 1024) + " KB" : ""}
+                · <a href=${p.source_url} target="_blank" rel="noopener noreferrer">view source</a>
+                ${p.installed && html` · installed @ <code>${shortSha(p.installed.sha)}</code>`}</div>
+              ${p.error && html`<div class="error small">${p.error}</div>`}
+            </div>
+            ${m && (inst
+              ? html`<button onClick=${() => onAdd(inst)}>Add to dashboard</button>`
+              : html`<button onClick=${() => install(p)}>
+                  ${p.installed ? (p.installed.sha === preview.sha ? "Reinstall" : "Update") : "Install"}</button>`)}
+          </div>`;
+        })}
+      </div>`}
+  </div>`;
 }
 
 function Settings({ w, def, missing, secretNames, onSave, onCancel }) {

@@ -84,12 +84,24 @@
     onProps: (fn) => { propListeners.add(fn); return () => propListeners.delete(fn); },
   };
 
+  // Browser extensions (MetaMask, password managers, ...) inject scripts into every frame and
+  // their failures inside the sandbox ("Failed to connect to MetaMask") are not the widget's.
+  const EXTENSION = /(chrome|moz|safari-web|ms-browser)-extension:\/\/|^webkit-masked-url:/;
+  const EXTENSION_MSG = /metamask|ethereum provider|inpage\.js|contentscript/i;
+  const fromExtension = (err, filename) =>
+    EXTENSION.test(filename || "") || EXTENSION.test((err && err.stack) || "") ||
+    EXTENSION_MSG.test((err && err.message) || String(err || ""));
+
   function report(err) {
     const msg = err && err.message ? err.message : String(err);
     send({ type: "error", payload: { message: msg.slice(0, 500) } });
   }
-  addEventListener("error", (e) => report(e.error || e.message));
-  addEventListener("unhandledrejection", (e) => report(e.reason));
+  addEventListener("error", (e) => {
+    if (!fromExtension(e.error, e.filename)) report(e.error || e.message);
+  });
+  addEventListener("unhandledrejection", (e) => {
+    if (!fromExtension(e.reason)) report(e.reason);
+  });
 
   window.hosted = api;
   send({ type: "hello" });

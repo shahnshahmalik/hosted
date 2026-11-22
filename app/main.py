@@ -1,14 +1,16 @@
 import html
+import io
 import json
+import zipfile
 from contextlib import closing
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import ai, store
+from . import ai, plugins, store
 from .proxy import ProxyError, proxy_request
 from .store import StoreError, db
 
@@ -48,6 +50,97 @@ store.seed_themes()
 def list_defs():
     with closing(db()) as c:
         return store.list_defs(c)
+
+
+@app.delete("/api/widget-defs/{type_id}", status_code=204)
+def delete_def(type_id: str):
+    """Uninstall a plugin or delete an AI-made type (builtins can't be deleted)."""
+    with closing(db()) as c:
+        d = store.get_def(c, type_id, with_code=False)
+        if not d:
+            raise StoreError(f"widget type {type_id!r} not found")
+        if d["source"] == "builtin":
+            raise StoreError("builtin widget types cannot be removed")
+        store.delete_def(c, type_id, source=d["source"])
+
+
+PACKAGE_README = """# {name}
+
+{description}
+
+A widget for Hosted, the self-hosted AI dashboard.
+
+## Install
+
+Push this folder to a GitHub repository, then in Hosted open **+ Add widget → Install from GitHub**
+and paste the repository URL (or the URL of this folder, e.g.
+`https://github.com/<you>/<repo>/tree/main/{id}`).
+
+## Permissions
+
+{permissions}
+
+## Files
+
+- `manifest.json`: name, size, settings (props) and the hosts/secrets the widget needs
+- `index.html`: the widget itself (HTML/CSS/JS using the `hosted` SDK)
+"""
+
+
+@app.get("/api/widget-defs/{type_id}/export")
+def export_def(type_id: str):
+    """Download a widget type as a ready-to-publish package: <id>/manifest.json, index.html, README.md."""
+    with closing(db()) as c:
+        d = store.get_def(c, type_id)
+    if not d:
+        raise StoreError(f"widget type {type_id!r} not found")
+    manifest = {"id": d["id"], "name": d["name"], "description": d["description"],
+                "version": d.get("version") or "1.0.0", "author": d.get("author") or "",
+                **({k: d[k] for k in ("homepage", "license") if d.get(k)}),
+                "size": d["size"], "permissions": d["permissions"], "props": d["props"]}
+    perms = d["permissions"]
+    lines = [f"- Contacts `{h}`" for h in perms["hosts"]] + [f"- Uses the secret `{s}`" for s in perms["secrets"]]
+    readme = PACKAGE_README.format(name=d["name"], description=d["description"] or "", id=d["id"],
+                                   permissions="\n".join(lines) or "None: this widget has no network access.")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(f"{d['id']}/manifest.json", json.dumps(manifest, indent=2) + "\n")
+        z.writestr(f"{d['id']}/index.html", d["code"])
+        z.writestr(f"{d['id']}/README.md", readme)
+    return Response(buf.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{d["id"]}.zip"'})
+
+
+# ---------- plugins from GitHub ----------
+
+class PreviewIn(BaseModel):
+    url: str = Field(max_length=500)
+
+
+class InstallIn(BaseModel):
+    url: str = Field(max_length=500)
+    sha: str = Field(max_length=40)
+    path: str = Field("", max_length=300)
+
+
+@app.post("/api/plugins/preview")
+async def plugin_preview(body: PreviewIn):
+    return await plugins.preview(body.url)
+
+
+@app.post("/api/plugins/install")
+async def plugin_install(body: InstallIn):
+    return await plugins.install(body.url, body.sha, body.path)
+
+
+@app.get("/api/plugins/updates")
+async def plugin_updates():
+    return await plugins.check_updates()
+
+
+@app.post("/api/plugins/{type_id}/update")
+async def plugin_update(type_id: str):
+    return await plugins.update(type_id)
 
 
 # ---------- widget instances ----------

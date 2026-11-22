@@ -125,3 +125,15 @@ header h1 span { color: var(--accent); }
   .body { flex-direction: column-reverse; }
   .chat { width: auto; height: 60vh; position: static; margin: 0 20px 20px; align-self: stretch; }
 }
+
+/* ---------- widget library / plugins ---------- */
+.tabs { display: flex; gap: 6px; margin: 4px 0 8px; }
+.def-main { min-width: 0; flex: 1; }
+.def-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+button.small, .linkbtn { padding: 2px 8px; font-size: 12px; }
+.linkbtn { color: var(--muted); text-decoration: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  clip-path: var(--control-clip); font-family: var(--label-font); text-transform: var(--label-case);
+  letter-spacing: calc(var(--label-tracking) * .5); }
+.linkbtn:hover { color: var(--text); border-color: var(--accent); }
+.gh-install form { margin-bottom: 8px; }
+.gh-src { margin: 8px 0; }

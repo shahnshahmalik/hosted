@@ -119,7 +119,14 @@ def validate_manifest(m: dict, type_id: str) -> dict:
         if t == "select":
             props[k]["options"] = [str(o) for o in p.get("options", [])][:50]
     size = m.get("size") or {}
-    w, h = int(size.get("w", 3)), int(size.get("h", 2))
+    try:
+        w, h = int(size.get("w", 3)), int(size.get("h", 2))
+    except (TypeError, ValueError):
+        raise StoreError("size.w and size.h must be integers")
+    # Optional package metadata, shown in the picker and kept when exporting/publishing.
+    meta = {k: str(m[k])[:200] for k in ("author", "version", "homepage", "license") if isinstance(m.get(k), (str, int, float))}
+    if "homepage" in meta and not re.match(r"^https?://", meta["homepage"]):
+        del meta["homepage"]
     return {
         "id": type_id,
         "name": str(m.get("name") or type_id)[:60],
@@ -127,6 +134,7 @@ def validate_manifest(m: dict, type_id: str) -> dict:
         "size": {"w": max(1, min(COLS, w)), "h": max(1, min(20, h))},
         "permissions": {"hosts": sorted(set(hosts)), "secrets": sorted(set(secrets))},
         "props": props,
+        **meta,
     }
 
 
@@ -155,8 +163,14 @@ def seed_builtin_widgets():
 
 
 def def_row_to_dict(r, with_code=False):
+    origin = r["origin"]
+    try:
+        origin = json.loads(origin) if origin else None
+    except ValueError:
+        pass
+    # "revision" counts local changes (frame cache key); "version" stays the author's package version.
     d = {**json.loads(r["manifest"]), "source": r["source"], "builtin": r["source"] == "builtin",
-         "version": r["version"], "origin": r["origin"]}
+         "revision": r["version"], "origin": origin}
     if with_code:
         d["code"] = r["code"]
     return d
