@@ -1,0 +1,30 @@
+<style>
+  .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .big { font-family: var(--font-display); font-size: 30px; font-weight: 600; }
+  .bar { height: 6px; background: var(--surface); border-radius: 3px; overflow: hidden; margin: 6px 0; }
+  .bar i { display: block; height: 100%; background: var(--accent); transition: width .4s; }
+  .bar i.warn { background: var(--warning); } .bar i.crit { background: var(--danger); }
+  .small { font-size: 11px; }
+</style>
+<div id="out" class="muted">Loading…</div>
+<script>
+  const out = document.getElementById("out"), hist = [];
+  const level = (p) => (p >= 90 ? "crit" : p >= 75 ? "warn" : "");
+  hosted.ready.then((h) => {
+    let timer;
+    async function tick() {
+      try {
+        const m = (await h.system()).memory;
+        hist.push(m.percent); if (hist.length > 60) hist.shift();
+        out.className = "";
+        out.innerHTML = `<div class="top"><span class="big">${m.percent.toFixed(0)}%</span>
+            <span class="muted">${h.formatBytes(m.used)} / ${h.formatBytes(m.total)}</span></div>
+          <div class="bar"><i class="${level(m.percent)}" style="width:${m.percent}%"></i></div>
+          ${h.sparkline(hist, { width: 300, height: 34, min: 0, max: 100 })}
+          <div class="small muted">${m.swap_total ? `Swap ${h.formatBytes(m.swap_used)} / ${h.formatBytes(m.swap_total)}` : "No swap"} · ${h.formatBytes(m.available)} available</div>`;
+      } catch (e) { out.innerHTML = `<span class="error">${e.message}</span>`; }
+    }
+    const start = () => { clearInterval(timer); tick(); timer = setInterval(tick, Math.max(1, Number(h.props.interval) || 2) * 1000); };
+    start(); h.onProps(start);
+  });
+</script>

@@ -1,0 +1,7 @@
+{
+  "name": "Processor",
+  "description": "Live CPU usage with per-core load, frequency and load average.",
+  "size": { "w": 3, "h": 3 },
+  "permissions": { "capabilities": ["system"] },
+  "props": { "interval": { "type": "number", "label": "Update every (seconds)", "default": 2 } }
+}

@@ -1,0 +1,54 @@
+<style>
+  .rows { display: flex; flex-direction: column; gap: 6px; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto 90px; gap: 10px; align-items: center;
+    padding: 6px 8px; background: var(--surface); border-radius: calc(var(--radius) * .5); }
+  .sym { font-family: var(--font-display); font-weight: 600; text-transform: uppercase; }
+  .name { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .price { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-display); }
+  .chg { font-size: 11px; text-align: right; }
+  .up { color: var(--success); } .down { color: var(--danger); }
+  .foot { margin-top: 6px; font-size: 11px; }
+  @media (max-width: 260px) { .row { grid-template-columns: 1fr auto; } .chart { display: none; } }
+</style>
+<div id="out" class="muted">Loading…</div>
+<script>
+  const out = document.getElementById("out");
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  let timer;
+
+  async function load(h) {
+    const ids = String(h.props.coins || "").toLowerCase().split(/[\s,]+/).filter((x) => /^[a-z0-9-]+$/.test(x)).slice(0, 12);
+    const cur = h.props.currency || "usd";
+    if (!ids.length) { out.innerHTML = '<span class="error">Add coin ids in settings, e.g. bitcoin</span>'; return; }
+    try {
+      const r = await h.fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=${cur}&ids=${ids.join(",")}&sparkline=true&price_change_percentage=24h`);
+      if (r.status === 429) throw new Error("CoinGecko rate limit; slowing down");
+      if (!r.ok) throw new Error(`CoinGecko HTTP ${r.status}`);
+      const coins = await r.json();
+      const fmt = new Intl.NumberFormat(undefined, { style: "currency", currency: cur.toUpperCase(), maximumFractionDigits: 2 });
+      const small = new Intl.NumberFormat(undefined, { style: "currency", currency: cur.toUpperCase(), maximumSignificantDigits: 4 });
+      const order = Object.fromEntries(ids.map((id, i) => [id, i]));
+      coins.sort((a, b) => order[a.id] - order[b.id]);
+      out.className = "";
+      out.innerHTML = `<div class="rows">${coins.map((c) => {
+        const ch = c.price_change_percentage_24h ?? 0, cls = ch >= 0 ? "up" : "down";
+        const pts = (c.sparkline_in_7d?.price || []).filter((_, i, a) => i % 2 === 0 || i === a.length - 1);
+        return `<div class="row"><div><div class="sym">${esc(c.symbol)}</div><div class="name muted">${esc(c.name)}</div></div>
+          <div><div class="price">${(c.current_price < 1 ? small : fmt).format(c.current_price)}</div>
+            <div class="chg ${cls}">${ch >= 0 ? "▲" : "▼"} ${Math.abs(ch).toFixed(2)}%</div></div>
+          <div class="chart">${h.sparkline(pts, { width: 90, height: 30, color: ch >= 0 ? "var(--success)" : "var(--danger)" })}</div></div>`;
+      }).join("")}</div><div class="foot muted">7-day trend · updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>`;
+      await h.storage.set("last", out.innerHTML.slice(0, 60000));
+    } catch (e) {
+      const cached = await h.storage.get("last").catch(() => null);
+      if (cached && !out.querySelector(".rows")) out.innerHTML = cached;
+      out.insertAdjacentHTML("beforeend", `<div class="error foot">${esc(e.message)}</div>`);
+    }
+  }
+  hosted.ready.then(async (h) => {
+    const cached = await h.storage.get("last").catch(() => null);
+    if (cached) { out.className = ""; out.innerHTML = cached; }
+    const start = () => { clearInterval(timer); load(h); timer = setInterval(() => load(h), Math.max(30, Number(h.props.refresh) || 60) * 1000); };
+    start(); h.onProps(start);
+  });
+</script>

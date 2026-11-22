@@ -59,6 +59,12 @@ How installing works:
 }
 ```
 
+`permissions.capabilities` asks for server-provided abilities: `system` (read CPU, memory, disk,
+temperature and host info) and `ping` (check whether URLs respond; status and latency only). Like
+hosts and secrets, the user approves them per widget.
+
+Prop types: `string`, `text` (multi-line), `number`, `boolean`, `select` (with `options`).
+
 Host patterns without a port allow only 80/443. `*.x.com` matches subdomains, not `x.com`.
 
 ## index.html
@@ -75,6 +81,10 @@ An HTML fragment placed in `<body>`. The SDK is available as `window.hosted`:
 | `hosted.storage.get/set/remove(key)` | per-instance JSON KV (64 KB/value, 100 keys) |
 | `hosted.setProps(partial)` | persist settings from inside the widget |
 | `hosted.openUrl(url)` | open an http(s) link in a new tab; only honoured during a real user click |
+| `await hosted.system()` | host stats: cpu, memory, disks, io, temps, info (needs capability `system`) |
+| `await hosted.ping(urls)` | `[{url, ok, status, ms}]`, reachability only (needs capability `ping`) |
+| `hosted.sparkline(values, opts)` | inline SVG sparkline string (`width`, `height`, `color`, `min`, `max`, `fill`) |
+| `hosted.formatBytes(n)` | `1536` → `"1.5 KB"` |
 
 Style widgets only with theme tokens (see `themes/README.md`), e.g. `var(--text)`, `var(--surface)`,
 `var(--accent)`, `var(--font-display)`; they are set on `:root` and update live when the user

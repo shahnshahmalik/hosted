@@ -19,7 +19,14 @@ SECRET_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 # Widget type ids. Installed plugins will use a namespaced form, e.g. "gh.owner.repo".
 TYPE_ID = re.compile(r"^[a-z][a-z0-9-]{1,40}$")
 HOST_PATTERN = re.compile(r"^(\*\.)?[a-z0-9.-]+(:\d{1,5})?$|^\[[0-9a-f:]+\](:\d{1,5})?$")
-PROP_TYPES = {"string", "number", "boolean", "select"}
+PROP_TYPES = {"string", "text", "number", "boolean", "select"}
+# Server-provided abilities a widget can ask for, besides hosts and secrets. Granted per instance.
+CAPABILITIES = {
+    "system": "read system stats (CPU, memory, disks, temperature)",
+    "ping": "check whether URLs are reachable (status and latency only)",
+}
+PERM_KEYS = ("hosts", "secrets", "capabilities")
+EMPTY_PERMS = {"hosts": [], "secrets": [], "capabilities": []}
 MAX_CODE = 200 * 1024
 # Where a widget type came from. Only "ai" types may be modified by the AI.
 SOURCES = {"builtin", "ai", "installed"}
@@ -105,6 +112,10 @@ def validate_manifest(m: dict, type_id: str) -> dict:
         if not HOST_PATTERN.match(h) or h in ("*", "*.") or h.count("*") > 1:
             raise StoreError(f"invalid host pattern {h!r}; use e.g. api.example.com, *.example.com, 192.168.1.5:8080")
     secrets = [str(s) for s in perms.get("secrets", [])]
+    caps = [str(x) for x in perms.get("capabilities", [])]
+    for cap in caps:
+        if cap not in CAPABILITIES:
+            raise StoreError(f"unknown capability {cap!r}; available: {', '.join(sorted(CAPABILITIES))}")
     for s in secrets:
         if not SECRET_NAME.match(s):
             raise StoreError(f"invalid secret name {s!r}; use UPPER_SNAKE_CASE")
@@ -132,7 +143,7 @@ def validate_manifest(m: dict, type_id: str) -> dict:
         "name": str(m.get("name") or type_id)[:60],
         "description": str(m.get("description", ""))[:400],
         "size": {"w": max(1, min(COLS, w)), "h": max(1, min(20, h))},
-        "permissions": {"hosts": sorted(set(hosts)), "secrets": sorted(set(secrets))},
+        "permissions": {"hosts": sorted(set(hosts)), "secrets": sorted(set(secrets)), "capabilities": sorted(set(caps))},
         "props": props,
         **meta,
     }
@@ -224,7 +235,7 @@ def delete_def(c, type_id: str, source: str):
 # ---------- widget instances ----------
 
 def _pending(grants: dict, declared: dict) -> dict:
-    return {k: [v for v in declared.get(k, []) if v not in grants.get(k, [])] for k in ("hosts", "secrets")}
+    return {k: [v for v in declared.get(k, []) if v not in grants.get(k, [])] for k in PERM_KEYS}
 
 
 def row_to_widget(c, r, defs_cache=None):
@@ -238,7 +249,7 @@ def row_to_widget(c, r, defs_cache=None):
         "config": config,
         "grants": grants,
         # Declared by the widget type but not yet approved by the user.
-        "pending": _pending(grants, d["permissions"]) if d else {"hosts": [], "secrets": []},
+        "pending": _pending(grants, d["permissions"]) if d else dict(EMPTY_PERMS),
     }
 
 
@@ -285,7 +296,7 @@ def free_slot(c, w, h):
 
 def create_widget(c, title, config, rect=None, grant=False):
     """grant=True only for direct user actions (the picker). The AI always creates ungranted widgets."""
-    grants = {"hosts": [], "secrets": []}
+    grants = dict(EMPTY_PERMS)
     t = config.get("type")
     d = None
     if t:
@@ -347,9 +358,9 @@ def effective_grants(c, row) -> dict:
     t = json.loads(row["config"]).get("type")
     d = t and get_def(c, t, with_code=False)
     if not d:
-        return {"hosts": [], "secrets": []}
+        return dict(EMPTY_PERMS)
     declared = d["permissions"]
-    return {k: [v for v in granted.get(k, []) if v in declared.get(k, [])] for k in ("hosts", "secrets")}
+    return {k: [v for v in granted.get(k, []) if v in declared.get(k, [])] for k in PERM_KEYS}
 
 
 # ---------- settings, theme, secrets ----------

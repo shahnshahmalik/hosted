@@ -90,6 +90,8 @@ function App() {
     "storage.get": async (w, p) => (await api(`/widgets/${w.id}/storage/${encodeURIComponent(p.key)}`)).value,
     "storage.set": (w, p) => api(`/widgets/${w.id}/storage/${encodeURIComponent(p.key)}`, "PUT", { value: p.value ?? null }),
     "storage.remove": (w, p) => api(`/widgets/${w.id}/storage/${encodeURIComponent(p.key)}`, "DELETE"),
+    system: (w) => api(`/widgets/${w.id}/system`),
+    ping: (w, p) => api(`/widgets/${w.id}/ping`, "POST", { urls: (p.urls || []).slice(0, 40) }),
     open: async (w, p) => {
       // A user click inside the frame also activates this page (activation propagates to
       // ancestors), so requiring it means a widget cannot open tabs on its own.
@@ -241,8 +243,8 @@ function App() {
           style.height = Math.max(ROW, style.height + drag.dy);
         }
         const def = defs[w.config.type];
-        const pending = w.pending || { hosts: [], secrets: [] };
-        const needsAllow = pending.hosts.length + pending.secrets.length > 0;
+        const pending = { hosts: [], secrets: [], capabilities: [], ...(w.pending || {}) };
+        const needsAllow = pending.hosts.length + pending.secrets.length + pending.capabilities.length > 0;
         const fk = frameKey(w);
         const missing = (w.grants?.secrets || []).filter((n) => !secretNames.includes(n));
         return html`
@@ -256,7 +258,7 @@ function App() {
             </div>
             ${needsAllow && html`
               <div class="allow-bar">
-                <span>Wants access to ${[...pending.hosts, ...pending.secrets.map((s) => "secret " + s)].join(", ")}</span>
+                <span title=${permissionSummary(pending)}>Needs permission: ${permissionSummary(pending)}</span>
                 <button onClick=${() => allow(w.id)}>Allow</button>
               </div>`}
             ${frameErrors[w.id] && html`
@@ -298,10 +300,22 @@ function Modal({ title, onClose, children }) {
     </div>`;
 }
 
+// Mirror of store.CAPABILITIES (labels shown when asking the user for permission).
+const CAPABILITY_LABELS = {
+  system: "Read system stats (CPU, memory, disks, temperature)",
+  ping: "Check whether URLs are reachable",
+};
+const permissionSummary = (p) => [
+  ...(p.hosts || []),
+  ...(p.secrets || []).map((s) => "secret " + s),
+  ...(p.capabilities || []).map((c) => (CAPABILITY_LABELS[c] || c).toLowerCase()),
+].join(", ");
+
 function Permissions({ perms, secretNames }) {
-  const { hosts = [], secrets = [] } = perms || {};
-  if (!hosts.length && !secrets.length) return html`<div class="perm muted">No network access</div>`;
+  const { hosts = [], secrets = [], capabilities = [] } = perms || {};
+  if (!hosts.length && !secrets.length && !capabilities.length) return html`<div class="perm muted">No network access</div>`;
   return html`<div class="perm">
+    ${capabilities.map((c) => html`<div>${CAPABILITY_LABELS[c] || c}</div>`)}
     ${hosts.length > 0 && html`<div>Can contact: ${hosts.map((x) => html`<code>${x}</code> `)}</div>`}
     ${secrets.length > 0 && html`<div>Can use secrets: ${secrets.map((s) => html`
       <code class=${secretNames.includes(s) ? "" : "unset"} title=${secretNames.includes(s) ? "set" : "not set"}>${s}</code> `)}</div>`}
@@ -455,6 +469,9 @@ function Settings({ w, def, missing, secretNames, onSave, onCancel }) {
       if (p.type === "boolean")
         return html`<label class="check"><input type="checkbox" checked=${!!props[k]}
           onChange=${(e) => set(k, e.currentTarget.checked)} /> ${label}</label>`;
+      if (p.type === "text")
+        return html`<label>${label}<textarea rows="8" class="prop-text" value=${props[k] ?? ""}
+          onInput=${(e) => set(k, e.currentTarget.value)}></textarea></label>`;
       if (p.type === "select")
         return html`<label>${label}<select value=${props[k]} onChange=${(e) => set(k, e.currentTarget.value)}>
           ${(p.options || []).map((o) => html`<option value=${o}>${o}</option>`)}</select></label>`;

@@ -1,0 +1,98 @@
+<style>
+  .group { margin: 4px 0 10px; }
+  .group h4 { margin: 0 0 6px; font: 11px var(--label-font); text-transform: var(--label-case); letter-spacing: var(--label-tracking); color: var(--muted); font-weight: normal; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--tile, 150px), 1fr)); gap: 8px; }
+  .tile { position: relative; display: flex; align-items: center; gap: 10px; padding: 9px 10px; cursor: pointer;
+    background: var(--surface); border: 1px solid transparent; border-radius: calc(var(--radius) * .6); clip-path: var(--control-clip);
+    transition: border-color .15s, transform .15s; min-width: 0; }
+  .tile:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .icon { width: 30px; height: 30px; flex-shrink: 0; display: grid; place-items: center; border-radius: 7px; font-size: 18px; }
+  .icon img { width: 30px; height: 30px; object-fit: contain; }
+  .icon.letter { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); font-family: var(--font-display); font-weight: 600; font-size: 15px; }
+  .txt { min-width: 0; }
+  .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .desc { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dot { position: absolute; top: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); opacity: .6; }
+  .dot.up { background: var(--success); opacity: 1; box-shadow: 0 0 6px var(--success); }
+  .dot.down { background: var(--danger); opacity: 1; }
+  .compact { --tile: 120px; } .compact .tile { padding: 6px 8px; } .compact .desc { display: none; }
+</style>
+<div id="out" class="muted">Loading…</div>
+<script>
+  const out = document.getElementById("out");
+  const ICON_CDN = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/";
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  let services = [], icons = {}, status = {}, timer;
+
+  function parse(text) {
+    const groups = []; let cur = null;
+    for (const raw of String(text || "").split("\n")) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (line.startsWith("#")) { cur = { name: line.replace(/^#+\s*/, ""), items: [] }; groups.push(cur); continue; }
+      const [name, url, icon, desc] = line.split("|").map((x) => x.trim());
+      if (!name || !/^https?:\/\//i.test(url || "")) continue;
+      if (!cur) { cur = { name: "", items: [] }; groups.push(cur); }
+      cur.items.push({ name, url, icon: icon || "", desc: desc || "" });
+    }
+    return groups;
+  }
+
+  function iconHtml(s) {
+    const key = s.icon.toLowerCase();
+    if (icons[key]) return `<div class="icon"><img alt="" src="${icons[key]}"></div>`;
+    if (s.icon && !/^[a-z0-9-]+$/i.test(s.icon)) return `<div class="icon">${esc(s.icon.slice(0, 4))}</div>`; // emoji
+    return `<div class="icon letter">${esc(s.name[0].toUpperCase())}</div>`;
+  }
+
+  function render(h) {
+    const groups = parse(h.props.services);
+    services = groups.flatMap((g) => g.items);
+    if (!services.length) { out.innerHTML = '<span class="muted">Add services in settings (⚙).</span>'; return; }
+    out.className = h.props.columns === "compact" ? "compact" : "";
+    let i = 0;
+    out.innerHTML = groups.map((g) => `<div class="group">${g.name ? `<h4>${esc(g.name)}</h4>` : ""}<div class="tiles">${g.items.map((s) => {
+      const st = status[s.url], idx = i++;
+      const dot = h.props.status ? `<span class="dot ${st ? (st.ok ? "up" : "down") : ""}" title="${st ? (st.ok ? `Up · ${st.status} · ${st.ms} ms` : `Down${st.error ? " · " + esc(st.error) : st.status ? " · " + st.status : ""}`) : "Checking…"}"></span>` : "";
+      return `<div class="tile" data-i="${idx}" title="${esc(s.url)}">${dot}${iconHtml(s)}<div class="txt"><div class="name">${esc(s.name)}</div>${s.desc ? `<div class="desc muted">${esc(s.desc)}</div>` : ""}</div></div>`;
+    }).join("")}</div></div>`).join("");
+  }
+
+  async function loadIcons(h) {
+    const names = [...new Set(services.map((s) => s.icon.toLowerCase()).filter((n) => /^[a-z0-9-]+$/.test(n)))];
+    const missing = names.filter((n) => !(n in icons));
+    if (!missing.length) return;
+    await Promise.all(missing.map(async (n) => {
+      try {
+        const r = await h.fetch(ICON_CDN + n + ".svg");
+        icons[n] = r.ok ? await r.dataUrl() : null;
+      } catch { icons[n] = null; }
+    }));
+    const keep = Object.fromEntries(Object.entries(icons).filter(([, v]) => v && v.length < 12000));
+    h.storage.set("icons", keep).catch(() => {});
+    render(h);
+  }
+
+  async function check(h) {
+    if (!h.props.status || !services.length) return;
+    try {
+      const res = await h.ping(services.map((s) => s.url));
+      status = Object.fromEntries(res.map((r) => [r.url, r]));
+    } catch (e) { status = {}; }
+    render(h);
+  }
+
+  out.addEventListener("click", (e) => {
+    const t = e.target.closest(".tile");
+    if (t) hosted.openUrl(services[t.dataset.i].url).catch(() => {});
+  });
+
+  hosted.ready.then(async (h) => {
+    icons = (await h.storage.get("icons").catch(() => null)) || {};
+    const start = () => {
+      clearInterval(timer); render(h); loadIcons(h); check(h);
+      timer = setInterval(() => check(h), Math.max(15, Number(h.props.interval) || 60) * 1000);
+    };
+    start(); h.onProps(start);
+  });
+</script>

@@ -1,0 +1,25 @@
+<style>
+  .host { font-family: var(--font-display); font-size: 18px; font-weight: 600; word-break: break-all; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 8px 0 0; font-size: 12px; }
+  dt { color: var(--muted); } dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+<div id="out" class="muted">Loading…</div>
+<script>
+  const out = document.getElementById("out");
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const uptime = (s) => { const d = Math.floor(s / 86400), hh = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+    return d ? `${d}d ${hh}h` : hh ? `${hh}h ${m}m` : `${m}m`; };
+  hosted.ready.then((h) => {
+    async function tick() {
+      try {
+        const s = await h.system(), i = s.info;
+        const rows = [["OS", i.os], ["Model", i.model], ["Kernel", `${i.kernel} · ${i.arch}`], ["CPU", `${s.cpu.cores} cores${s.cpu.model ? " · " + s.cpu.model : ""}`],
+          ["Memory", h.formatBytes(s.memory.total)], ["Uptime", uptime(i.uptime)], ["Processes", i.processes],
+          ...i.ips.slice(0, 3).map((ip) => ["IP " + ip.interface, ip.address])].filter(([, v]) => v);
+        out.className = "";
+        out.innerHTML = `<div class="host">${esc(i.hostname)}</div><dl>${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd title="${esc(v)}">${esc(v)}</dd>`).join("")}</dl>`;
+      } catch (e) { out.innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+    }
+    tick(); setInterval(tick, 30000);
+  });
+</script>

@@ -1,0 +1,12 @@
+{
+  "name": "CPU temperature",
+  "description": "Live CPU temperature with warning thresholds (Linux / Raspberry Pi sensors).",
+  "size": { "w": 3, "h": 2 },
+  "permissions": { "capabilities": ["system"] },
+  "props": {
+    "unit": { "type": "select", "label": "Unit", "options": ["C", "F"], "default": "C" },
+    "warn": { "type": "number", "label": "Warning at (°C)", "default": 65 },
+    "crit": { "type": "number", "label": "Critical at (°C)", "default": 80 },
+    "interval": { "type": "number", "label": "Update every (seconds)", "default": 3 }
+  }
+}

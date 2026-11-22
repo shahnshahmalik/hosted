@@ -1,0 +1,16 @@
+{
+  "name": "Services",
+  "description": "Your self-hosted apps as icon tiles with live up/down status, like a homepage. Click a tile to open it.",
+  "size": { "w": 6, "h": 4 },
+  "permissions": { "hosts": ["cdn.jsdelivr.net"], "capabilities": ["ping"] },
+  "props": {
+    "services": {
+      "type": "text",
+      "label": "Services: one per line as Name | URL | icon | description. Lines starting with # are group headings. Icons are names from dashboard-icons (e.g. jellyfin, pi-hole, home-assistant) or an emoji.",
+      "default": "# Media\nJellyfin | http://jellyfin.local:8096 | jellyfin | Movies & shows\nImmich | http://immich.local:2283 | immich | Photos\n# Home\nHome Assistant | http://homeassistant.local:8123 | home-assistant | Automations\nPi-hole | http://pi.hole/admin | pi-hole | DNS ad blocking\n# Online\nGitHub | https://github.com | github\nCloudflare | https://dash.cloudflare.com | cloudflare"
+    },
+    "status": { "type": "boolean", "label": "Show up/down status", "default": true },
+    "interval": { "type": "number", "label": "Status check every (seconds)", "default": 60 },
+    "columns": { "type": "select", "label": "Tile size", "options": ["compact", "comfortable"], "default": "comfortable" }
+  }
+}

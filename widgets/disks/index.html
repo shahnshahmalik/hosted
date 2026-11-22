@@ -1,0 +1,35 @@
+<style>
+  .disk { margin-bottom: 9px; }
+  .line { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+  .mount { font-family: var(--font-display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar { height: 6px; background: var(--surface); border-radius: 3px; overflow: hidden; margin-top: 3px; }
+  .bar i { display: block; height: 100%; background: var(--accent); transition: width .4s; }
+  .bar i.warn { background: var(--warning); } .bar i.crit { background: var(--danger); }
+  .io { font-size: 11px; display: flex; gap: 12px; }
+</style>
+<div id="out" class="muted">Loading…</div>
+<script>
+  const out = document.getElementById("out");
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const level = (p) => (p >= 90 ? "crit" : p >= 80 ? "warn" : "");
+  hosted.ready.then((h) => {
+    let timer;
+    async function tick() {
+      try {
+        const s = await h.system();
+        const hide = String(h.props.hide || "").split(",").map((x) => x.trim()).filter(Boolean);
+        const disks = s.disks.filter((d) => !hide.includes(d.mount));
+        if (!disks.length) { out.innerHTML = '<span class="muted">No drives visible. In Docker, mount the drives you want to see.</span>'; return; }
+        const rate = (b) => (b == null ? "–" : h.formatBytes(b) + "/s");
+        out.className = "";
+        out.innerHTML = disks.map((d) => `<div class="disk" title="${esc(d.device)} ${esc(d.fstype)}">
+            <div class="line"><span class="mount">${esc(d.mount)}</span><span class="muted">${h.formatBytes(d.used)} / ${h.formatBytes(d.total)}</span></div>
+            <div class="bar"><i class="${level(d.percent)}" style="width:${d.percent}%"></i></div>
+            <div class="line muted"><span>${d.percent.toFixed(0)}% used</span><span>${h.formatBytes(d.free)} free</span></div></div>`).join("") +
+          `<div class="io muted"><span>▼ read ${rate(s.io.read_bps)}</span><span>▲ write ${rate(s.io.write_bps)}</span></div>`;
+      } catch (e) { out.innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+    }
+    const start = () => { clearInterval(timer); tick(); timer = setInterval(tick, Math.max(2, Number(h.props.interval) || 5) * 1000); };
+    start(); h.onProps(start);
+  });
+</script>

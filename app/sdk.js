@@ -43,7 +43,7 @@
   const b64ToBytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 
   function wrapResponse(r) {
-    const ctype = r.headers["content-type"] || "";
+    const ctype = (r.headers["content-type"] || "").split(";")[0].trim();
     return {
       status: r.status,
       ok: r.status >= 200 && r.status < 300,
@@ -82,6 +82,32 @@
     /** Open an http(s) link in a new tab. Only works from a user click (e.g. inside a click handler). */
     openUrl: (url) => call("open", { url: String(url) }),
     onProps: (fn) => { propListeners.add(fn); return () => propListeners.delete(fn); },
+    /** Host stats (needs the "system" capability): {cpu, memory, disks, io, temps, info}. */
+    system: () => call("system", {}),
+    /** Reachability of URLs (needs the "ping" capability): [{url, ok, status, ms}]. */
+    ping: (urls) => call("ping", { urls: [].concat(urls).map(String) }),
+    /** Inline SVG sparkline for a list of numbers. Colors default to the theme accent. */
+    sparkline: (values, opts = {}) => {
+      const v = (values || []).map(Number).filter((x) => isFinite(x));
+      const w = opts.width || 120, h = opts.height || 32, pad = 2;
+      if (v.length < 2) return `<svg width="${w}" height="${h}"></svg>`;
+      const min = opts.min ?? Math.min(...v), max = opts.max ?? Math.max(...v), span = max - min || 1;
+      const pts = v.map((y, i) => [pad + (i * (w - 2 * pad)) / (v.length - 1), h - pad - ((y - min) / span) * (h - 2 * pad)]);
+      const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
+      const color = opts.color || "var(--accent)";
+      const fill = opts.fill === false ? "" :
+        `<path d="${line}L${pts[pts.length - 1][0].toFixed(1)},${h}L${pts[0][0].toFixed(1)},${h}Z" fill="${color}" opacity="${opts.fillOpacity ?? 0.15}"/>`;
+      return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;max-width:100%">` +
+        `${fill}<path d="${line}" fill="none" stroke="${color}" stroke-width="${opts.strokeWidth || 1.5}" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+    },
+    /** 1536 -> "1.5 KB" */
+    formatBytes: (n, digits = 1) => {
+      if (n == null || !isFinite(n)) return "–";
+      const u = ["B", "KB", "MB", "GB", "TB", "PB"];
+      let i = 0; n = Number(n);
+      while (Math.abs(n) >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+      return `${n.toFixed(i ? digits : 0)} ${u[i]}`;
+    },
   };
 
   // Browser extensions (MetaMask, password managers, ...) inject scripts into every frame and

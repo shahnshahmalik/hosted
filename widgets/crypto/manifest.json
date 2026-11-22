@@ -1,0 +1,11 @@
+{
+  "name": "Crypto prices",
+  "description": "Live prices, 24h change and a 7-day chart from CoinGecko (no API key).",
+  "size": { "w": 4, "h": 3 },
+  "permissions": { "hosts": ["api.coingecko.com"] },
+  "props": {
+    "coins": { "type": "string", "label": "Coins (CoinGecko ids, comma-separated)", "default": "bitcoin,ethereum,solana" },
+    "currency": { "type": "select", "label": "Currency", "options": ["usd", "eur", "gbp", "inr", "jpy", "cad", "aud", "chf"], "default": "usd" },
+    "refresh": { "type": "number", "label": "Refresh every (seconds, min 30)", "default": 60 }
+  }
+}

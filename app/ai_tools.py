@@ -47,7 +47,9 @@ TOOLS = [
                           "description": "Hosts the widget fetches from, e.g. ['api.coingecko.com']"},
                 "secrets": {"type": "array", "items": {"type": "string"},
                             "description": "UPPER_SNAKE secret names it uses via {{secret.NAME}}"},
-                "props": {"type": "object", "description": "User settings schema: {name: {type: string|number|boolean|select, label, default, options?}}"},
+                "capabilities": {"type": "array", "items": {"type": "string", "enum": sorted(store.CAPABILITIES)},
+                                 "description": "'system' for hosted.system() host stats, 'ping' for hosted.ping(urls)"},
+                "props": {"type": "object", "description": "User settings schema: {name: {type: string|text|number|boolean|select, label, default, options?}}; text is multi-line"},
                 "code": {"type": "string", "description": "HTML fragment for <body>, with inline <style> and <script>"},
             },
             "required": ["id", "name", "code"],
@@ -197,13 +199,14 @@ def run_tool(name: str, args, frame_errors=None) -> tuple[str, bool, str]:
             code = args.get("code")
             if not isinstance(code, str):
                 raise StoreError("code must be a string")
-            for k in ("hosts", "secrets"):
+            for k in ("hosts", "secrets", "capabilities"):
                 if args.get(k) is not None and not isinstance(args[k], list):
                     raise StoreError(f"{k} must be an array")
             manifest = {
                 "name": _str(args, "name", True, 60), "description": _str(args, "description", maxlen=400) or "",
                 "size": _obj(args, "size") or {}, "props": _obj(args, "props") or {},
-                "permissions": {"hosts": args.get("hosts") or [], "secrets": args.get("secrets") or []},
+                "permissions": {"hosts": args.get("hosts") or [], "secrets": args.get("secrets") or [],
+                                "capabilities": args.get("capabilities") or []},
             }
             d = store.save_def(c, t, manifest, code, source="ai")
             users = [w for w in store.list_widgets(c) if w["config"].get("type") == t]

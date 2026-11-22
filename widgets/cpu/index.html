@@ -1,0 +1,32 @@
+<style>
+  .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .big { font-family: var(--font-display); font-size: 30px; font-weight: 600; }
+  .cores { display: grid; grid-template-columns: repeat(auto-fill, minmax(10px, 1fr)); gap: 3px; height: 34px; margin: 8px 0 4px; }
+  .core { background: var(--surface); border-radius: 2px; display: flex; align-items: flex-end; overflow: hidden; }
+  .core i { display: block; width: 100%; background: var(--accent); transition: height .4s; }
+  .small { font-size: 11px; }
+  .model { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+</style>
+<div id="out" class="muted">Loading…</div>
+<script>
+  const out = document.getElementById("out"), hist = [];
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  hosted.ready.then((h) => {
+    let timer;
+    async function tick() {
+      try {
+        const c = (await h.system()).cpu;
+        hist.push(c.percent); if (hist.length > 60) hist.shift();
+        out.className = "";
+        out.innerHTML = `<div class="top"><span class="big">${c.percent.toFixed(0)}%</span>
+            <span class="muted">${c.cores} cores${c.freq_mhz ? ` · ${(c.freq_mhz / 1000).toFixed(2)} GHz` : ""}</span></div>
+          ${h.sparkline(hist, { width: 300, height: 36, min: 0, max: 100 })}
+          <div class="cores">${c.per_core.map((p) => `<div class="core" title="${p.toFixed(0)}%"><i style="height:${Math.max(2, p)}%"></i></div>`).join("")}</div>
+          <div class="small muted">${c.load ? `Load ${c.load.join(" · ")}` : ""}</div>
+          ${c.model ? `<div class="small muted model">${esc(c.model)}</div>` : ""}`;
+      } catch (e) { out.innerHTML = `<span class="error">${e.message}</span>`; }
+    }
+    const start = () => { clearInterval(timer); tick(); timer = setInterval(tick, Math.max(1, Number(h.props.interval) || 2) * 1000); };
+    start(); h.onProps(start);
+  });
+</script>

@@ -137,3 +137,4 @@ button.small, .linkbtn { padding: 2px 8px; font-size: 12px; }
 .linkbtn:hover { color: var(--text); border-color: var(--accent); }
 .gh-install form { margin-bottom: 8px; }
 .gh-src { margin: 8px 0; }
+.prop-text { font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }

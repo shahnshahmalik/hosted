@@ -1,0 +1,10 @@
+{
+  "name": "Disks",
+  "description": "Live usage of mounted drives plus read/write activity.",
+  "size": { "w": 3, "h": 3 },
+  "permissions": { "capabilities": ["system"] },
+  "props": {
+    "hide": { "type": "string", "label": "Hide mounts (comma-separated)", "default": "" },
+    "interval": { "type": "number", "label": "Update every (seconds)", "default": 5 }
+  }
+}

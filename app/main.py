@@ -1,3 +1,4 @@
+import asyncio
 import html
 import io
 import json
@@ -10,7 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import ai, plugins, store
+from . import ai, plugins, store, system
 from .proxy import ProxyError, proxy_request
 from .store import StoreError, db
 
@@ -99,7 +100,8 @@ def export_def(type_id: str):
                 **({k: d[k] for k in ("homepage", "license") if d.get(k)}),
                 "size": d["size"], "permissions": d["permissions"], "props": d["props"]}
     perms = d["permissions"]
-    lines = [f"- Contacts `{h}`" for h in perms["hosts"]] + [f"- Uses the secret `{s}`" for s in perms["secrets"]]
+    lines = [f"- Contacts `{h}`" for h in perms["hosts"]] + [f"- Uses the secret `{s}`" for s in perms["secrets"]] + \
+        [f"- Can {store.CAPABILITIES[x]}" for x in perms.get("capabilities", [])]
     readme = PACKAGE_README.format(name=d["name"], description=d["description"] or "", id=d["id"],
                                    permissions="\n".join(lines) or "None: this widget has no network access.")
     buf = io.BytesIO()
@@ -303,6 +305,32 @@ async def proxy(wid: str, request: Request):
         return JSONResponse({"detail": e.detail}, status_code=e.status)
     except Exception as e:  # network failures, timeouts, bad URLs
         return JSONResponse({"detail": f"upstream error: {type(e).__name__}: {e}"[:300]}, status_code=502)
+
+
+# ---------- server capabilities for widgets ----------
+
+def require_capability(c, wid, cap):
+    if cap not in store.effective_grants(c, store.get_widget_row(c, wid)).get("capabilities", []):
+        raise HTTPException(403, f"this widget has not been allowed to {store.CAPABILITIES[cap]}")
+
+
+@app.get("/api/widgets/{wid}/system")
+async def widget_system(wid: str):
+    with closing(db()) as c:
+        require_capability(c, wid, "system")
+    return await asyncio.get_running_loop().run_in_executor(system.EXECUTOR, system.snapshot)
+
+
+class PingIn(BaseModel):
+    urls: list[str] = Field(max_length=40)
+
+
+@app.post("/api/widgets/{wid}/ping")
+async def widget_ping(wid: str, body: PingIn):
+    with closing(db()) as c:
+        require_capability(c, wid, "ping")
+    urls = [u for u in body.urls if isinstance(u, str) and u.startswith(("http://", "https://")) and len(u) < 500]
+    return await system.ping(urls)
 
 
 # ---------- AI ----------
