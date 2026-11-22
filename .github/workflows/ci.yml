@@ -12,7 +12,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Check Python and JavaScript syntax
         run: |
@@ -32,7 +32,7 @@ jobs:
           test "$(curl -sf localhost:8080/api/widget-defs | jq length)" -ge 14
           test "$(curl -sf localhost:8080/api/widgets | jq length)" -ge 1
           wid=$(curl -sf localhost:8080/api/widgets | jq -r '.[0].id')
-          curl -sfI localhost:8080/frame/$wid | grep -qi "content-security-policy: default-src 'none'"
+          curl -sf -D - -o /dev/null localhost:8080/frame/$wid | grep -qi "content-security-policy: default-src 'none'"
           curl -sf localhost:8080/fonts/space-grotesk.woff2 -o /dev/null
 
       - name: Server logs
