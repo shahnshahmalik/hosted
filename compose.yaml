@@ -1,19 +1,19 @@
 # docker compose up -d   ->   http://localhost:8080
 services:
-  hosted:
-    image: ghcr.io/shahnshahmalik/hosted:latest
+  labcanvas:
+    image: ghcr.io/shahnshahmalik/labcanvas:latest
     # build: .            # or build from this checkout instead of pulling the image
-    container_name: hosted
+    container_name: labcanvas
     restart: unless-stopped
     ports:
       - "8080:8080"
     volumes:
-      - hosted-data:/data
+      - labcanvas-data:/data
       # Optional: let the Disks widget see host drives (read-only), then list them below.
       # - /:/hostfs:ro
     # environment:
-    #   HOSTED_DISK_PATHS: /hostfs
+    #   LABCANVAS_DISK_PATHS: /hostfs
     hostname: homelab   # shown by the System info widget
 
 volumes:
-  hosted-data:
+  labcanvas-data:

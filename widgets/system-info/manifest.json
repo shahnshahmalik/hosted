@@ -1,6 +1,6 @@
 {
   "name": "System info",
-  "description": "Hostname, OS, hardware, uptime and network addresses of the machine running Hosted.",
+  "description": "Hostname, OS, hardware, uptime and network addresses of the machine running LabCanvas.",
   "size": { "w": 3, "h": 3 },
   "permissions": { "capabilities": ["system"] }
 }

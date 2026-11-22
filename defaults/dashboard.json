@@ -1,5 +1,5 @@
 {
-  "_comment": "What a brand-new Hosted install starts with. Applied once, on first run; edit freely. Widgets reference types in widgets/ and themes in themes/.",
+  "_comment": "What a brand-new LabCanvas install starts with. Applied once, on first run; edit freely. Widgets reference types in widgets/ and themes in themes/.",
   "theme": "neon-grid",
   "widgets": [
     { "type": "services",    "title": "Services",       "x": 0, "y": 0, "w": 6, "h": 4 },

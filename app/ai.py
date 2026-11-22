@@ -20,7 +20,10 @@ from . import store
 from .ai_tools import TOOLS, run_tool, snapshot
 from .store import StoreError
 
-SYSTEM_PROMPT = (Path(__file__).parent / "prompt.md").read_text()
+_HERE = Path(__file__).parent
+# The widget-authoring guide is shared by the dashboard assistant and the widget editor.
+WIDGET_GUIDE = (_HERE / "prompt_widgets.md").read_text()
+SYSTEM_PROMPT = (_HERE / "prompt.md").read_text() + "\n\n" + WIDGET_GUIDE
 PROVIDERS = {
     "anthropic": {"model": "claude-opus-5-5", "base_url": None},
     "openai": {"model": "", "base_url": "https://api.openai.com/v1"},
@@ -151,11 +154,11 @@ def _echo_safe(blocks: list[dict]) -> list[dict]:
     return [b for i, b in enumerate(blocks) if i >= idx or b.get("type") not in drop]
 
 
-async def _anthropic_turn(cfg, key, rows):
+async def _anthropic_turn(cfg, key, rows, system=None, tool_defs=None):
     client = anthropic.AsyncAnthropic(api_key=key, max_retries=2)
     tools = [{"name": t["name"], "description": t["description"], "input_schema": t["input_schema"],
-              "eager_input_streaming": True} for t in TOOLS]
-    kwargs = dict(model=cfg["model"], max_tokens=64000, system=SYSTEM_PROMPT, tools=tools,
+              "eager_input_streaming": True} for t in (tool_defs or TOOLS)]
+    kwargs = dict(model=cfg["model"], max_tokens=64000, system=system or SYSTEM_PROMPT, tools=tools,
                   messages=_to_anthropic(rows), cache_control={"type": "ephemeral"})
     if not cfg["model"].startswith(("claude-haiku-4", "claude-3", "claude-sonnet-4", "claude-opus-4-1")):
         kwargs["output_config"] = {"effort": cfg["effort"]}
@@ -208,8 +211,8 @@ async def _anthropic_turn(cfg, key, rows):
 
 # ---------- OpenAI-compatible (OpenAI, Ollama) ----------
 
-def _to_openai(rows):
-    msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
+def _to_openai(rows, system=None):
+    msgs = [{"role": "system", "content": system or SYSTEM_PROMPT}]
     for r in rows:
         if r["role"] == "user":
             msgs.append({"role": "user", "content": r["text"]})
@@ -225,17 +228,17 @@ def _to_openai(rows):
     return msgs
 
 
-async def _openai_turn(cfg, key, rows):
+async def _openai_turn(cfg, key, rows, system=None, tool_defs=None):
     if not cfg["model"]:
         raise AIError("Set a model name in AI settings.")
     tools = [{"type": "function", "function": {"name": t["name"], "description": t["description"],
-                                               "parameters": t["input_schema"]}} for t in TOOLS]
+                                               "parameters": t["input_schema"]}} for t in (tool_defs or TOOLS)]
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     url = cfg["base_url"].rstrip("/") + "/chat/completions"
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=10.0)) as client:
             r = await client.post(url, headers=headers,
-                                  json={"model": cfg["model"], "messages": _to_openai(rows), "tools": tools})
+                                  json={"model": cfg["model"], "messages": _to_openai(rows, system), "tools": tools})
     except httpx.HTTPError as e:
         raise AIError(f"Could not reach {cfg['base_url']}: {type(e).__name__}")
     if r.status_code == 401:

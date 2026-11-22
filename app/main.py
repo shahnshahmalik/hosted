@@ -3,6 +3,8 @@ import hashlib
 import html
 import io
 import json
+import secrets as pysecrets
+import time
 import zipfile
 from contextlib import closing
 from pathlib import Path
@@ -12,7 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import __version__, ai, plugins, store, system
+from . import __version__, ai, ai_edit, plugins, store, system
 from .proxy import ProxyError, proxy_request
 from .store import StoreError, db
 
@@ -22,7 +24,7 @@ FONTS_CSS = (STATIC / "fonts" / "fonts.css").read_text()
 STORAGE_MAX_VALUE = 64 * 1024
 STORAGE_MAX_KEYS = 100
 
-app = FastAPI(title="Hosted", version=__version__)
+app = FastAPI(title="LabCanvas", version=__version__)
 
 
 @app.middleware("http")
@@ -35,7 +37,7 @@ async def static_headers(request: Request, call_next):
     """
     response = await call_next(request)
     path = request.url.path
-    if path.startswith(("/api/", "/frame/")) or path == "/":
+    if path.startswith(("/api/", "/frame/", "/frame-preview/", "/edit/")) or path == "/":
         return response  # these set their own headers
     if path.startswith("/fonts/"):
         # Widget frames have an opaque origin and font loads are CORS requests.
@@ -85,11 +87,11 @@ PACKAGE_README = """# {name}
 
 {description}
 
-A widget for Hosted, the self-hosted AI dashboard.
+A widget for LabCanvas, the self-hosted AI dashboard.
 
 ## Install
 
-Push this folder to a GitHub repository, then in Hosted open **+ Add widget → Install from GitHub**
+Push this folder to a GitHub repository, then in LabCanvas open **+ Add widget → Install from GitHub**
 and paste the repository URL (or the URL of this folder, e.g.
 `https://github.com/<you>/<repo>/tree/main/{id}`).
 
@@ -349,6 +351,90 @@ async def widget_ping(wid: str, body: PingIn):
     return await system.ping(urls)
 
 
+# ---------- widget editor ----------
+
+@app.get("/api/widgets/{wid}/source")
+def widget_source(wid: str):
+    with closing(db()) as c:
+        row = store.get_widget_row(c, wid)
+        w = store.row_to_widget(c, row)
+        t = w["config"].get("type")
+        d = store.get_def(c, t) if t else None
+        users = sum(1 for x in store.list_widgets(c) if x["config"].get("type") == t) if t else 1
+    manifest = store.editable_manifest(d) if d else {"name": w["title"], "size": {"w": w["w"], "h": w["h"]},
+                                                    "permissions": dict(store.EMPTY_PERMS), "props": {}}
+    return {"widget": w, "type": t, "source": d["source"] if d else None, "revision": d["revision"] if d else 0,
+            "manifest": manifest, "code": d["code"] if d else "", "instances": users,
+            # builtin/installed types are copied on save; AI-made ones change for every instance
+            "copy_on_save": not d or d["source"] != "ai"}
+
+
+class SourceIn(BaseModel):
+    manifest: dict
+    code: str = Field(max_length=store.MAX_CODE)
+
+
+@app.put("/api/widgets/{wid}/source")
+def save_widget_source(wid: str, body: SourceIn):
+    with closing(db()) as c:
+        return store.save_widget_source(c, wid, body.manifest, body.code)
+
+
+class EditChatIn(BaseModel):
+    message: str = Field(min_length=1, max_length=8000)
+    history: list[dict] = []
+    manifest: dict
+    code: str = Field(max_length=store.MAX_CODE)
+    errors: list[str] = []
+
+
+@app.post("/api/widgets/{wid}/edit-chat")
+async def widget_edit_chat(wid: str, body: EditChatIn):
+    with closing(db()) as c:
+        row = store.get_widget_row(c, wid)
+    draft = {"manifest": body.manifest, "code": body.code, "type_id": json.loads(row["config"]).get("type")}
+
+    async def events():
+        async for ev in ai_edit.edit_chat(wid, body.history, draft, body.message, [str(e) for e in body.errors]):
+            yield f"data: {json.dumps(ev)}\n\n"
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
+# Unsaved drafts rendered in the editor's preview. Kept in memory briefly; the preview frame calls
+# the SDK as the real widget instance, so it has exactly that widget's grants (new hosts in a draft
+# only work after saving and allowing them).
+PREVIEWS: dict[str, dict] = {}
+PREVIEW_TTL, PREVIEW_MAX = 1800, 50
+
+
+class PreviewIn(BaseModel):
+    code: str = Field(max_length=store.MAX_CODE)
+
+
+@app.post("/api/widgets/{wid}/preview")
+def create_preview(wid: str, body: PreviewIn):
+    with closing(db()) as c:
+        store.get_widget_row(c, wid)
+    now = time.time()
+    for k in [k for k, v in PREVIEWS.items() if now - v["t"] > PREVIEW_TTL]:
+        del PREVIEWS[k]
+    while len(PREVIEWS) >= PREVIEW_MAX:
+        del PREVIEWS[min(PREVIEWS, key=lambda k: PREVIEWS[k]["t"])]
+    token = pysecrets.token_urlsafe(16)
+    PREVIEWS[token] = {"wid": wid, "code": body.code, "t": now}
+    return {"url": f"/frame-preview/{token}"}
+
+
+@app.get("/frame-preview/{token}")
+def frame_preview(token: str, request: Request):
+    p = PREVIEWS.get(token)
+    if not p or time.time() - p["t"] > PREVIEW_TTL:
+        raise HTTPException(404, "preview expired; press Preview again")
+    return frame_response(p["code"], "preview", request)
+
+
 # ---------- AI ----------
 
 class AIConfigIn(BaseModel):
@@ -437,11 +523,16 @@ def frame(wid: str, request: Request):
         row = store.get_widget_row(c, wid)
         t = json.loads(row["config"]).get("type")
         d = t and store.get_def(c, t)
+    return frame_response(d["code"] if d else '<p class="muted">Empty widget</p>', t or "widget", request)
+
+
+def frame_response(code: str, title: str, request: Request) -> HTMLResponse:
+    """A sandboxed widget document: theme tokens, base styles and the SDK, then the widget's code."""
+    with closing(db()) as c:
         theme = store.theme_css(store.active_theme(c)["vars"])
-    code = d["code"] if d else '<p class="muted">Empty widget</p>'
     doc = (
         '<!doctype html><html><head><meta charset="utf-8">'
-        f"<title>{html.escape(t or 'widget')}</title>"
+        f"<title>{html.escape(title)}</title>"
         f"<style>{FONTS_CSS}{theme}{FRAME_BASE_CSS}</style><script>{SDK_JS}</script></head>"
         f"<body>{code}</body></html>"
     )
@@ -474,6 +565,11 @@ def index():
         css = store.theme_css(store.active_theme(c)["vars"])
     return HTMLResponse(INDEX_HTML.replace("<!--THEME-->", f'<style id="theme-vars">{css}</style>'),
                         headers={"Cache-Control": "no-store"})
+
+
+@app.get("/edit/{wid}")
+def editor_page(wid: str):
+    return index()
 
 
 app.mount("/", StaticFiles(directory=STATIC), name="static")

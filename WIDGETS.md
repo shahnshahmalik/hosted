@@ -51,7 +51,7 @@ How installing works:
   "description": "Shown in the picker",
   "version": "1.2.0",
   "author": "Your Name",
-  "homepage": "https://github.com/you/hosted-widgets",
+  "homepage": "https://github.com/you/labcanvas-widgets",
   "license": "MIT",
   "size": { "w": 3, "h": 3 },
   "permissions": { "hosts": ["api.open-meteo.com", "*.example.com", "192.168.1.5:8080"], "secrets": ["API_KEY"] },

@@ -2,7 +2,7 @@
 
 One snapshot is cached briefly so several live widgets polling every couple of seconds cost a
 single psutil sweep. In Docker, CPU/memory/temperature are the host's (via /proc and /sys);
-disks are whatever is mounted into the container (see README / HOSTED_DISK_PATHS).
+disks are whatever is mounted into the container (see README / LABCANVAS_DISK_PATHS).
 """
 
 import asyncio
@@ -26,7 +26,7 @@ _cache = {"t": 0.0, "data": None}
 # Concurrent polls must not sample twice: a second cpu_percent() call milliseconds after the first reads ~0%.
 _lock = threading.Lock()
 # psutil keeps cpu_percent() state per thread, so every sample must come from the same thread.
-EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="hosted-system")
+EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="labcanvas-system")
 # Prime on that thread: the first non-blocking reading is otherwise 0.
 EXECUTOR.submit(lambda: (psutil.cpu_percent(None), psutil.cpu_percent(None, percpu=True)))
 _io = {"t": 0.0, "read": 0, "write": 0}
@@ -70,7 +70,7 @@ def _temps():
 
 
 def _disks():
-    wanted = [p for p in os.environ.get("HOSTED_DISK_PATHS", "").split(",") if p.strip()]
+    wanted = [p for p in (os.environ.get("LABCANVAS_DISK_PATHS") or os.environ.get("HOSTED_DISK_PATHS", "")).split(",") if p.strip()]
     seen, out = set(), []
     parts = psutil.disk_partitions(all=False)
     mounts = wanted or [p.mountpoint for p in parts

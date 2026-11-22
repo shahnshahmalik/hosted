@@ -1,6 +1,6 @@
 # Third-party notices
 
-Hosted itself is MIT licensed (see [LICENSE](LICENSE)). It bundles the following third-party
+LabCanvas itself is MIT licensed (see [LICENSE](LICENSE)). It bundles the following third-party
 components, each under its own license:
 
 | Component | Where | License |

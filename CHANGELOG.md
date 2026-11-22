@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Renamed from Hosted to **LabCanvas** (repo, Docker image `ghcr.io/shahnshahmalik/labcanvas`,
+  `LABCANVAS_*` environment variables; the old `HOSTED_*` names still work).
+  Existing installs keep working: point the new image at your existing data volume
+  (e.g. `-v hosted-data:/data`) to keep your dashboard.
+- Widget editor: a ✎ button on every widget opens its code (70%) next to an AI chat (30%). The AI
+  edits the draft with exact find/replace edits, you preview it in the real sandbox and save.
+  Built-in and installed widgets are copied on first save; drafts survive a page reload.
+
 ## 0.1.1
 
 - Fix: after upgrading, browsers could keep running the previous version's scripts and styles

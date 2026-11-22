@@ -1,4 +1,4 @@
-// Hosted widget SDK — inlined into every sandboxed widget frame.
+// LabCanvas widget SDK — inlined into every sandboxed widget frame.
 // The frame has an opaque origin and no network access; everything goes via postMessage
 // to the dashboard, which enforces this widget's granted permissions.
 (() => {

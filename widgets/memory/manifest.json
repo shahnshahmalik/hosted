@@ -1,6 +1,6 @@
 {
   "name": "Memory",
-  "description": "Live RAM and swap usage of the machine running Hosted.",
+  "description": "Live RAM and swap usage of the machine running LabCanvas.",
   "size": { "w": 3, "h": 2 },
   "permissions": { "capabilities": ["system"] },
   "props": { "interval": { "type": "number", "label": "Update every (seconds)", "default": 2 } }

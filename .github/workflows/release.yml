@@ -1,7 +1,7 @@
 name: Release image
 
 # Publishing a GitHub release builds the Docker image for amd64 and arm64 (Raspberry Pi)
-# and pushes it to ghcr.io/<owner>/hosted with the release tag and "latest".
+# and pushes it to ghcr.io/<owner>/labcanvas with the release tag and "latest".
 on:
   release:
     types: [published]

@@ -6,7 +6,7 @@ Thanks for helping! Issues and pull requests are welcome.
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-HOSTED_DB=data/dev.db .venv/bin/uvicorn app.main:app --reload --port 8080
+LABCANVAS_DB=data/dev.db .venv/bin/uvicorn app.main:app --reload --port 8080
 ```
 
 There is no frontend build step: edit `static/*.js` / `static/style.css` and reload the page.
@@ -21,6 +21,8 @@ Preact and htm are vendored in `static/vendor/`.
 | `app/proxy.py` | outbound proxy that enforces widget grants |
 | `app/sdk.js` | the `hosted` SDK injected into every widget frame |
 | `app/ai.py`, `app/ai_tools.py`, `app/prompt.md` | AI assistant: providers, tools, system prompt |
+| `app/ai_edit.py`, `app/prompt_edit.md`, `static/editor.js` | widget editor: AI edits a draft, preview, save |
+| `app/prompt_widgets.md` | widget-writing guide shared by both assistants |
 | `app/plugins.py` | installing widgets from GitHub |
 | `app/system.py` | host stats and URL checks for system widgets |
 | `widgets/<id>/` | built-in widgets (`manifest.json` + `index.html`) |

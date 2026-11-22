@@ -8,7 +8,8 @@ import uuid
 from contextlib import closing
 from pathlib import Path
 
-DB_PATH = os.environ.get("HOSTED_DB") or os.environ.get("CANVAS_DB") or "data/canvas.db"
+# LABCANVAS_DB, with the older HOSTED_DB / CANVAS_DB names still honoured.
+DB_PATH = os.environ.get("LABCANVAS_DB") or os.environ.get("HOSTED_DB") or os.environ.get("CANVAS_DB") or "data/canvas.db"
 ROOT = Path(__file__).resolve().parent.parent
 WIDGETS_DIR = ROOT / "widgets"
 THEMES_DIR = ROOT / "themes"
@@ -492,3 +493,43 @@ def seed_default_dashboard():
             except (StoreError, KeyError, TypeError):
                 continue  # a bad entry in the defaults file must never stop the app from starting
         set_setting(c, "seeded", True)
+
+
+# ---------- editing a widget's code ----------
+
+def editable_manifest(d: dict) -> dict:
+    """The manifest fields a user/AI may edit (no id, source or bookkeeping)."""
+    keys = ("name", "description", "version", "author", "homepage", "license", "size", "permissions", "props")
+    return {k: d[k] for k in keys if k in d}
+
+
+def save_widget_source(c, wid: str, manifest: dict, code: str) -> dict:
+    """Save edited code for a widget instance.
+
+    AI-made types are updated in place (every widget of that type changes). Builtin and installed
+    types are read-only, so the first save makes a copy (source "ai") and points only this widget
+    at it. Grants stay with the instance; anything newly declared needs the user's Allow.
+    """
+    row = get_widget_row(c, wid)
+    config = json.loads(row["config"])
+    old_id = config.get("type")
+    d = get_def(c, old_id, with_code=False) if old_id else None
+    if d and d["source"] == "ai":
+        saved = save_def(c, old_id, manifest, code, source="ai")
+        return {"def": saved, "forked": False, "widget": row_to_widget(c, get_widget_row(c, wid))}
+    base = _slug_id(f"{old_id or 'widget'}-custom")
+    new_id, n = base, 2
+    while get_def(c, new_id, with_code=False):
+        new_id, n = f"{base[:37]}-{n}", n + 1
+    m = dict(manifest)
+    if d and m.get("name") == d["name"]:
+        m["name"] = f"{d['name']} (custom)"[:60]
+    saved = save_def(c, new_id, m, code, source="ai")
+    c.execute("UPDATE widgets SET config=? WHERE id=?", (json.dumps({**config, "type": new_id}), wid))
+    c.commit()
+    return {"def": saved, "forked": True, "forked_from": old_id, "widget": row_to_widget(c, get_widget_row(c, wid))}
+
+
+def _slug_id(s: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:41].rstrip("-")
+    return s if s and s[0].isalpha() else f"w-{s}"[:41]

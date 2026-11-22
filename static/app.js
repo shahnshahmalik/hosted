@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "preact/hooks";
 import htm from "htm";
 import { api } from "/api.js";
 import { Chat } from "/chat.js";
+import { Editor } from "/editor.js";
 
 const html = htm.bind(h);
 const COLS = 12, GAP = 12, ROW = 80;
@@ -218,7 +219,7 @@ function App() {
 
   return html`
     <header>
-      <h1>Host<span>ed</span></h1>
+      <h1>Lab<span>Canvas</span></h1>
       <div class="actions">
         <select class="theme-select" title="Theme" value=${theme.id}
                 onChange=${async (e) => setTheme(await api("/theme", "PUT", { id: e.currentTarget.value }))}>
@@ -252,6 +253,7 @@ function App() {
             <div class="widget-head" onPointerDown=${(e) => start(e, w, "move")}>
               <span class="title">${w.title}</span>
               <span class="tools" onPointerDown=${(e) => e.stopPropagation()}>
+                <a class="ghost icon-btn" title="Edit with AI" href=${"/edit/" + w.id}>✎</a>
                 ${def && html`<button class="ghost" title="Settings" onClick=${() => setEditing(editing === w.id ? null : w.id)}>⚙</button>`}
                 <button class="ghost" title="Remove" onClick=${() => remove(w.id)}>✕</button>
               </span>
@@ -518,4 +520,5 @@ function Secrets({ names, defs, onChange, onClose }) {
   <//>`;
 }
 
-render(html`<${App} />`, document.getElementById("app"));
+const editMatch = location.pathname.match(/^\/edit\/([\w-]+)$/);
+render(editMatch ? html`<${Editor} wid=${editMatch[1]} />` : html`<${App} />`, document.getElementById("app"));

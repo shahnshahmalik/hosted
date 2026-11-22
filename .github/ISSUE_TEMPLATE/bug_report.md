@@ -13,7 +13,7 @@ labels: bug
 2.
 
 **Environment**
-- Hosted version (see the release or image tag):
+- LabCanvas version (see the release or image tag):
 - How you run it (Docker / bare Python), host (Pi 4, x86, ...):
 - Browser:
 

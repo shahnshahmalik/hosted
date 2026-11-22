@@ -1,17 +1,17 @@
 <div align="center">
 
-# Hosted
+# LabCanvas
 
 **A self-hosted dashboard you build by chatting with AI.**
 
 Ask for a widget, a layout or a whole new look, and it appears on your dashboard,
 running safely in a sandbox. Made for the homelab: light enough for a Raspberry Pi, no build step.
 
-[![CI](https://github.com/shahnshahmalik/hosted/actions/workflows/ci.yml/badge.svg)](https://github.com/shahnshahmalik/hosted/actions/workflows/ci.yml)
+[![CI](https://github.com/shahnshahmalik/labcanvas/actions/workflows/ci.yml/badge.svg)](https://github.com/shahnshahmalik/labcanvas/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Docker image](https://img.shields.io/badge/ghcr.io-shahnshahmalik%2Fhosted-2496ED?logo=docker&logoColor=white)](https://github.com/shahnshahmalik/hosted/pkgs/container/hosted)
+[![Docker image](https://img.shields.io/badge/ghcr.io-shahnshahmalik%2Flabcanvas-2496ED?logo=docker&logoColor=white)](https://github.com/shahnshahmalik/labcanvas/pkgs/container/labcanvas)
 
-![Hosted dashboard with the Neon Grid theme](docs/screenshots/hero.png)
+![LabCanvas dashboard with the Neon Grid theme](docs/screenshots/hero.png)
 
 </div>
 
@@ -19,6 +19,7 @@ running safely in a sandbox. Made for the homelab: light enough for a Raspberry 
 
 - **AI that builds your dashboard.** Bring your own Anthropic, OpenAI or Ollama key. The assistant
   writes new widgets, arranges the grid and designs themes, and it can't grant itself any access.
+- **Edit any widget by chatting.** Open a widget's code next to an AI chat, preview the draft, save.
 - **14 built-in widgets**, from live CPU, memory, disk and temperature stats to crypto charts and a
   homepage-style services launcher with up/down status.
 - **Sandboxed by design.** Every widget runs in an isolated iframe with no network access of its
@@ -33,7 +34,7 @@ running safely in a sandbox. Made for the homelab: light enough for a Raspberry 
 ## Quick start
 
 ```bash
-docker run -d --name hosted -p 8080:8080 -v hosted-data:/data ghcr.io/shahnshahmalik/hosted:latest
+docker run -d --name labcanvas -p 8080:8080 -v labcanvas-data:/data ghcr.io/shahnshahmalik/labcanvas:latest
 ```
 
 Then open **http://localhost:8080**. A fresh install starts with the Neon Grid theme and a starter
@@ -43,7 +44,7 @@ layout. To try the assistant, click **✦ Assistant**, open its settings and add
 <summary><b>Docker Compose</b></summary>
 
 ```bash
-curl -O https://raw.githubusercontent.com/shahnshahmalik/hosted/main/compose.yaml
+curl -O https://raw.githubusercontent.com/shahnshahmalik/labcanvas/main/compose.yaml
 docker compose up -d
 ```
 
@@ -54,8 +55,8 @@ See [`compose.yaml`](compose.yaml) for the optional host-disk mounts.
 <summary><b>Build from source / run without Docker</b></summary>
 
 ```bash
-git clone https://github.com/shahnshahmalik/hosted && cd hosted
-docker build -t hosted . && docker run -d -p 8080:8080 -v hosted-data:/data hosted
+git clone https://github.com/shahnshahmalik/labcanvas && cd labcanvas
+docker build -t labcanvas . && docker run -d -p 8080:8080 -v labcanvas-data:/data labcanvas
 ```
 
 Or with plain Python 3.12+:
@@ -84,6 +85,15 @@ is only ever sent to the provider you picked.
 The assistant can create widget types, add, move and remove widgets, and set or save themes. What
 it **can't** do is grant permissions: a widget it adds that wants network access shows an
 **Allow** bar, and nothing happens until you click it.
+
+## Edit any widget with AI
+
+![Editing the Weather widget: code on the left, AI chat on the right](docs/screenshots/editor.png)
+
+Every widget has a **✎** button. It opens the widget's code with an AI chat beside it: describe
+the change (*"make the numbers bigger"*, *"add a setting for the refresh interval"*), the
+assistant edits the code, you press **Preview** to try your draft in the real sandbox, then
+**Save**. Built-in and installed widgets are never modified: saving creates your own copy.
 
 ## Built-in widgets
 
@@ -154,15 +164,15 @@ Details and known limits are in [WIDGETS.md](WIDGETS.md#security-model) and
 [SECURITY.md](SECURITY.md).
 
 > [!IMPORTANT]
-> Hosted has **no login yet**. Run it on your home network or behind a reverse proxy with
+> LabCanvas has **no login yet**. Run it on your home network or behind a reverse proxy with
 > authentication (Authelia, Authentik, Cloudflare Access, Tailscale, …).
 
 ## Configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `HOSTED_DB` | `/data/canvas.db` in Docker | SQLite database location |
-| `HOSTED_DISK_PATHS` | auto | Comma-separated mount points for the Disks widget, e.g. `/hostfs,/hostfs-usb` |
+| `LABCANVAS_DB` | `/data/canvas.db` in Docker | SQLite database location |
+| `LABCANVAS_DISK_PATHS` | auto | Comma-separated mount points for the Disks widget, e.g. `/hostfs,/hostfs-usb` |
 
 Everything else (AI provider, secrets, theme, layout) is set in the UI. What a brand-new install
 starts with lives in [`defaults/dashboard.json`](defaults/dashboard.json).
@@ -173,11 +183,11 @@ starts with lives in [`defaults/dashboard.json`](defaults/dashboard.json).
 CPU, memory and temperature already come from the host. For drives and the hostname:
 
 ```bash
-docker run -d --name hosted -p 8080:8080 -v hosted-data:/data \
+docker run -d --name labcanvas -p 8080:8080 -v labcanvas-data:/data \
   --hostname "$(hostname)" \
   -v /:/hostfs:ro -v /mnt/usb:/hostfs-usb:ro \
-  -e HOSTED_DISK_PATHS=/hostfs,/hostfs-usb \
-  ghcr.io/shahnshahmalik/hosted:latest
+  -e LABCANVAS_DISK_PATHS=/hostfs,/hostfs-usb \
+  ghcr.io/shahnshahmalik/labcanvas:latest
 ```
 </details>
 
@@ -189,7 +199,7 @@ docker run -d --name hosted -p 8080:8080 -v hosted-data:/data \
 - [ ] Streaming replies for OpenAI and Ollama
 - [ ] A community widget gallery
 
-Ideas and widget requests are welcome in [issues](https://github.com/shahnshahmalik/hosted/issues).
+Ideas and widget requests are welcome in [issues](https://github.com/shahnshahmalik/labcanvas/issues).
 
 ## Contributing
 

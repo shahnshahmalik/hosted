@@ -20,8 +20,8 @@ import httpx
 from . import store
 from .store import StoreError
 
-API = os.environ.get("HOSTED_GITHUB_API", "https://api.github.com")
-RAW = os.environ.get("HOSTED_GITHUB_RAW", "https://raw.githubusercontent.com")
+API = os.environ.get("LABCANVAS_GITHUB_API") or os.environ.get("HOSTED_GITHUB_API", "https://api.github.com")
+RAW = os.environ.get("LABCANVAS_GITHUB_RAW") or os.environ.get("HOSTED_GITHUB_RAW", "https://raw.githubusercontent.com")
 MAX_MANIFEST = 64 * 1024
 MAX_PACKAGES = 50
 MAX_DEPTH = 3  # how deep below the given folder to look for packages
@@ -49,7 +49,7 @@ def parse_url(url: str) -> dict:
 
 
 def _headers(token):
-    h = {"Accept": "application/vnd.github+json", "User-Agent": "hosted-dashboard"}
+    h = {"Accept": "application/vnd.github+json", "User-Agent": "labcanvas"}
     if token:
         h["Authorization"] = f"Bearer {token}"
     return h
