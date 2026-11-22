@@ -1,24 +1,12 @@
 import { h, render } from "preact";
 import { useState, useEffect, useRef } from "preact/hooks";
 import htm from "htm";
+import { api } from "/api.js";
+import { Chat } from "/chat.js";
 
 const html = htm.bind(h);
 const COLS = 12, GAP = 12, ROW = 80;
-const THEME_VARS = ["--bg", "--card", "--text", "--muted", "--accent", "--radius"];
-
-const api = async (path, method = "GET", body) => {
-  const r = await fetch("/api" + path, {
-    method,
-    headers: body !== undefined ? { "Content-Type": "application/json" } : {},
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  if (!r.ok) {
-    let detail = `${method} ${path} failed: ${r.status}`;
-    try { detail = (await r.json()).detail || detail; } catch {}
-    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
-  }
-  return r.status === 204 ? null : r.json();
-};
+const THEME_VARS = ["--bg", "--card", "--text", "--muted", "--accent", "--radius", "--font"];
 
 const css = (r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v + "px"])); // Preact 11 won't add px
 
@@ -45,18 +33,34 @@ function App() {
   const [editing, setEditing] = useState(null); // widget id with settings open
   const [frameErrors, setFrameErrors] = useState({}); // wid -> message
   const [drag, setDrag] = useState(null);
+  const [theme, setTheme] = useState({});
+  const [chatOpen, setChatOpen] = useState(localStorage.getItem("hosted.chat") === "1");
+  const [nonces, setNonces] = useState({}); // wid -> manual reload counter (part of the frame key)
   const gridRef = useRef();
   const frames = useRef({}); // wid -> iframe element
-  const loads = useRef({}); // wid -> load count (navigation detection)
+  const loads = useRef({}); // frame key -> load count (navigation detection)
   const ctx = useRef({}); // always-current data for the message handler
   ctx.current = { defs, secretNames };
   const [width, setWidth] = useState(1000);
 
+  const refresh = async () => {
+    const [ws, ds, th] = await Promise.all([api("/widgets"), api("/widget-defs"), api("/theme")]);
+    for (const k of Object.keys(frames.current)) if (!ws.some((w) => w.id === k)) delete frames.current[k];
+    setDefs(Object.fromEntries(ds.map((d) => [d.id, d])));
+    setWidgets(ws);
+    setTheme(th);
+  };
   useEffect(() => {
-    api("/widgets").then(setWidgets);
-    api("/widget-defs").then((l) => setDefs(Object.fromEntries(l.map((d) => [d.id, d]))));
+    refresh();
     api("/secrets").then(setSecretNames);
   }, []);
+  useEffect(() => { localStorage.setItem("hosted.chat", chatOpen ? "1" : "0"); }, [chatOpen]);
+  useEffect(() => {
+    const root = document.documentElement.style;
+    THEME_VARS.forEach((k) => root.removeProperty(k));
+    Object.entries(theme).forEach(([k, v]) => root.setProperty(k, v));
+    latest.current.forEach(pushUpdate);
+  }, [theme]);
   useEffect(() => {
     const ro = new ResizeObserver(() => setWidth(gridRef.current.clientWidth));
     ro.observe(gridRef.current);
@@ -116,10 +120,13 @@ function App() {
     return () => removeEventListener("message", onMessage);
   }, []);
 
-  const onFrameLoad = (wid, el) => {
-    // The first load is our document. Any later load means the widget navigated itself away.
-    loads.current[wid] = (loads.current[wid] || 0) + 1;
-    if (loads.current[wid] > 1) {
+  const frameKey = (w) => `${w.id}:${defs[w.config.type]?.version || 0}:${nonces[w.id] || 0}`;
+  const onFrameLoad = (wid, key, el) => {
+    // Each frame key is a fresh iframe element. Its first load is our document; any later
+    // load means the widget navigated itself away.
+    loads.current[key] = (loads.current[key] || 0) + 1;
+    if (loads.current[key] === 1) setFrameErrors((s) => (s[wid] ? { ...s, [wid]: undefined } : s));
+    if (loads.current[key] > 1) {
       el.src = "about:blank";
       setFrameErrors((s) => ({ ...s, [wid]: "Widget was stopped: it tried to navigate away from its frame." }));
     }
@@ -155,11 +162,12 @@ function App() {
     setWidgets(latest.current.filter((w) => w.id !== id));
   };
 
-  const reload = (id) => {
-    delete loads.current[id];
-    setFrameErrors((s) => ({ ...s, [id]: undefined }));
-    const el = frames.current[id];
-    if (el) el.src = `/frame/${id}?t=${Date.now()}`;
+  const reload = (id) => setNonces((n) => ({ ...n, [id]: (n[id] || 0) + 1 }));
+
+  const allow = async (id) => {
+    const w = await api(`/widgets/${id}/grant`, "POST");
+    setWidgets(latest.current.map((x) => (x.id === id ? w : x)));
+    reload(id);
   };
 
   const start = (e, w, mode) => {
@@ -203,9 +211,12 @@ function App() {
       <h1>Hosted</h1>
       <div class="actions">
         <button class="ghost" onClick=${() => setModal("secrets")}>Secrets</button>
-        <button onClick=${() => setModal("picker")}>+ Add widget</button>
+        <button class="ghost" onClick=${() => setModal("picker")}>+ Add widget</button>
+        <button class=${chatOpen ? "ghost active" : ""} onClick=${() => setChatOpen(!chatOpen)}>✦ Assistant</button>
       </div>
     </header>
+    <div class="body">
+    <main>
     <div class=${"grid" + (drag ? " is-dragging" : "")} ref=${gridRef} style=${css({ height: rows * (ROW + GAP) })}
          onPointerMove=${move} onPointerUp=${end}>
       ${slot && slotOk && html`<div class="ghost-slot" style=${css(px(slot))}></div>`}
@@ -218,6 +229,9 @@ function App() {
           style.height = Math.max(ROW, style.height + drag.dy);
         }
         const def = defs[w.config.type];
+        const pending = w.pending || { hosts: [], secrets: [] };
+        const needsAllow = pending.hosts.length + pending.secrets.length > 0;
+        const fk = frameKey(w);
         const missing = (w.grants?.secrets || []).filter((n) => !secretNames.includes(n));
         return html`
           <div key=${w.id} class=${"widget" + (isDrag ? " dragging" : "")} style=${css(style)} data-wid=${w.id}>
@@ -228,6 +242,11 @@ function App() {
                 <button class="ghost" title="Remove" onClick=${() => remove(w.id)}>✕</button>
               </span>
             </div>
+            ${needsAllow && html`
+              <div class="allow-bar">
+                <span>Wants access to ${[...pending.hosts, ...pending.secrets.map((s) => "secret " + s)].join(", ")}</span>
+                <button onClick=${() => allow(w.id)}>Allow</button>
+              </div>`}
             ${frameErrors[w.id] && html`
               <div class="frame-error" title=${frameErrors[w.id]}>
                 <span>${frameErrors[w.id]}</span>
@@ -238,14 +257,18 @@ function App() {
                         onCancel=${() => setEditing(null)}
                         onSave=${async (next) => { await saveWidget(next); setEditing(null); }} />`
               : null}
-            <iframe class=${"widget-frame" + (editing === w.id ? " hidden" : "")}
+            <iframe key=${fk} class=${"widget-frame" + (editing === w.id ? " hidden" : "")}
                     src=${"/frame/" + w.id} sandbox="allow-scripts" referrerpolicy="no-referrer"
                     title=${w.title}
                     ref=${(el) => { if (el) frames.current[w.id] = el; }}
-                    onLoad=${(e) => onFrameLoad(w.id, e.currentTarget)}></iframe>
+                    onLoad=${(e) => onFrameLoad(w.id, fk, e.currentTarget)}></iframe>
             <div class="resize" onPointerDown=${(e) => start(e, w, "resize")}></div>
           </div>`;
       })}
+    </div>
+    </main>
+    ${chatOpen && html`<${Chat} onChanged=${refresh} onClose=${() => setChatOpen(false)}
+        frameErrors=${() => Object.fromEntries(Object.entries(frameErrors).filter(([, v]) => v))} />`}
     </div>
     ${modal === "picker" && html`<${Picker} defs=${Object.values(defs)} secretNames=${secretNames}
         onClose=${() => setModal(null)} onAdd=${(d) => { add(d); setModal(null); }} />`}
@@ -280,7 +303,7 @@ function Picker({ defs, secretNames, onClose, onAdd }) {
       ${defs.map((d) => html`
         <div class="def" data-def=${d.id}>
           <div class="def-main">
-            <b>${d.name}</b>
+            <b>${d.name}</b>${d.source !== "builtin" && html`<span class="tag">${d.source === "ai" ? "made by AI" : d.source}</span>`}
             <div class="muted small">${d.description}</div>
             <${Permissions} perms=${d.permissions} secretNames=${secretNames} />
           </div>

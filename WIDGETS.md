@@ -1,7 +1,19 @@
 # Widget runtime
 
-A widget definition is a folder in `widgets/<id>/` (builtins, seeded on startup) or a row in
-`widget_defs` (future AI-generated / imported widgets, `builtin=0`).
+## Package format
+
+A widget package is a folder with two files: `manifest.json` and `index.html`. The same format
+is used everywhere:
+
+| source | where it comes from | who may change it |
+|---|---|---|
+| `builtin` | `widgets/<id>/` in this repo, seeded on startup | only by editing the repo |
+| `ai` | written by the assistant (`save_widget_type` tool) | the assistant |
+| `installed` | (planned) a GitHub repo/folder, recorded in `origin` | only by reinstalling/updating |
+
+Each type has a `version` that increases on every change; open instances reload automatically.
+Permissions are always granted per instance by the user (the picker's Add, or the Allow bar),
+whoever wrote the widget, and a new version can never silently widen access.
 
 ## manifest.json
 
@@ -57,4 +69,13 @@ Theme CSS variables (`--text`, `--muted`, `--accent`, `--card`, `--bg`, `--radiu
   load, blanks the frame and flags it — but the request has already been sent. Secrets never
   enter the frame, so they can't leak this way.
 - DNS check-then-connect is not pinned (TOCTOU) — a fast-flipping rebind could slip through.
-- The dashboard itself has no authentication yet; anyone who can reach it can use the API.
+- The dashboard itself has no authentication yet; anyone who can reach it can use the API,
+  including the AI chat (which spends the configured provider key).
+
+## AI assistant
+
+The assistant (`app/ai.py`, tools in `app/ai_tools.py`, prompt in `app/prompt.md`) can create
+`ai` widget types, add/arrange/remove widgets and set the theme. It cannot grant permissions:
+widgets it adds start with no access and show an Allow bar. Provider keys are stored server-side
+in `settings` (not in `secrets`, so no widget can ever be granted them) and are never returned
+by the API.
