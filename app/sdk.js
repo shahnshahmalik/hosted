@@ -18,7 +18,9 @@
     });
 
   const applyTheme = (theme) => {
-    for (const [k, v] of Object.entries(theme || {})) document.documentElement.style.setProperty(k, v);
+    const root = document.documentElement.style;
+    for (const [k, v] of Object.entries(theme || {})) root.setProperty(k, v);
+    if (theme && theme["--scheme"]) root.colorScheme = theme["--scheme"];
   };
 
   addEventListener("message", (e) => {
@@ -77,6 +79,8 @@
       remove: (key) => call("storage.remove", { key }),
     },
     setProps: (props) => call("props.set", { props }),
+    /** Open an http(s) link in a new tab. Only works from a user click (e.g. inside a click handler). */
+    openUrl: (url) => call("open", { url: String(url) }),
     onProps: (fn) => { propListeners.add(fn); return () => propListeners.delete(fn); },
   };
 

@@ -92,7 +92,7 @@ export function Chat({ frameErrors, onChanged, onClose }) {
   };
 
   return html`
-    <aside class="chat" aria-label="Assistant">
+    <aside class="chat framed" aria-label="Assistant">
       <div class="chat-head">
         <b>Assistant</b>
         <span class="muted small">${config ? `${PROVIDERS[config.provider].label} · ${config.model || "no model"}` : ""}</span>

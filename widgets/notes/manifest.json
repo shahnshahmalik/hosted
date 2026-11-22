@@ -1,0 +1,10 @@
+{
+  "name": "Notes",
+  "description": "A sticky note. Text is saved automatically on this server. No network access.",
+  "size": { "w": 3, "h": 3 },
+  "permissions": { "hosts": [], "secrets": [] },
+  "props": {
+    "placeholder": { "type": "string", "label": "Placeholder", "default": "Write something…" },
+    "monospace": { "type": "boolean", "label": "Monospace font", "default": false }
+  }
+}

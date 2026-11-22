@@ -1,8 +1,8 @@
 <style>
   .now { display: flex; align-items: baseline; gap: 10px; }
-  .temp { font-size: 40px; font-weight: 600; }
+  .temp { font-family: var(--font-display); font-size: 40px; font-weight: 600; }
   .days { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 12px; text-align: center; }
-  .day { background: color-mix(in srgb, var(--text) 6%, transparent); border-radius: 8px; padding: 6px 2px; }
+  .day { background: var(--surface); border-radius: 8px; padding: 6px 2px; }
   .ico { font-size: 20px; }
 </style>
 <div id="out" class="muted">Loading…</div>

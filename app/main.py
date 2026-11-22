@@ -4,7 +4,7 @@ from contextlib import closing
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -14,10 +14,21 @@ from .store import StoreError, db
 
 STATIC = store.ROOT / "static"
 SDK_JS = (Path(__file__).parent / "sdk.js").read_text()
+FONTS_CSS = (STATIC / "fonts" / "fonts.css").read_text()
 STORAGE_MAX_VALUE = 64 * 1024
 STORAGE_MAX_KEYS = 100
 
 app = FastAPI(title="Hosted")
+
+
+@app.middleware("http")
+async def font_cors(request: Request, call_next):
+    """Widget frames have an opaque origin, and font loads are CORS requests: allow them for /fonts/ only."""
+    response = await call_next(request)
+    if request.url.path.startswith("/fonts/"):
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Cache-Control"] = "public, max-age=86400"
+    return response
 
 
 @app.exception_handler(StoreError)
@@ -28,6 +39,7 @@ async def store_error(_, e: StoreError):
 
 store.migrate()
 store.seed_builtin_widgets()
+store.seed_themes()
 
 
 # ---------- widget types ----------
@@ -86,18 +98,28 @@ def delete_widget(wid: str):
 
 # ---------- theme ----------
 
+@app.get("/api/themes")
+def list_themes():
+    with closing(db()) as c:
+        return store.list_themes(c)
+
+
 @app.get("/api/theme")
 def get_theme():
+    """Active theme: {id, name, overrides, vars (effective tokens)}."""
     with closing(db()) as c:
-        return store.get_setting(c, "theme", {})
+        return store.active_theme(c)
+
+
+class ThemeIn(BaseModel):
+    id: str
+    overrides: dict[str, str] = {}
 
 
 @app.put("/api/theme")
-def put_theme(vars_: dict):
+def put_theme(t: ThemeIn):
     with closing(db()) as c:
-        theme = store.validate_theme(vars_)
-        store.set_setting(c, "theme", theme)
-        return theme
+        return store.set_active_theme(c, t.id, t.overrides)
 
 
 # ---------- secrets (write-only) ----------
@@ -248,7 +270,7 @@ FRAME_CSP = "; ".join([
     "script-src 'unsafe-inline'",
     "style-src 'unsafe-inline'",
     "img-src data: blob:",
-    "font-src data:",
+    "font-src data: 'self' {fonts}",  # bundled fonts only (see frame())
     "media-src data: blob:",
     "connect-src 'none'",
     "frame-src 'none'",
@@ -257,41 +279,54 @@ FRAME_CSP = "; ".join([
     "frame-ancestors 'self'",
 ])
 
+# Widget base styles use theme tokens only; the active tokens are inlined before this.
 FRAME_BASE_CSS = """
-:root { color-scheme: dark; }
 html, body { margin: 0; height: 100%; }
-body { background: transparent; color: var(--text, #e6e8ee); font: 14px var(--font, system-ui, sans-serif);
+body { background: transparent; color: var(--text); font: 14px var(--font);
   padding: 0 12px 12px; box-sizing: border-box; overflow: auto; }
 * { box-sizing: border-box; }
-.muted { color: var(--muted, #8b90a0); }
-.error { color: #ff7a7a; }
+a { color: var(--accent); }
+h1, h2, h3 { font-family: var(--font-display); }
+.muted { color: var(--muted); }
+.error { color: var(--danger); }
+.label { font: 11px var(--label-font); text-transform: var(--label-case); letter-spacing: var(--label-tracking);
+  color: var(--muted); }
 """
 
 
 @app.get("/frame/{wid}")
-def frame(wid: str):
+def frame(wid: str, request: Request):
     with closing(db()) as c:
         row = store.get_widget_row(c, wid)
         t = json.loads(row["config"]).get("type")
         d = t and store.get_def(c, t)
+        theme = store.theme_css(store.active_theme(c)["vars"])
     code = d["code"] if d else '<p class="muted">Empty widget</p>'
     doc = (
         '<!doctype html><html><head><meta charset="utf-8">'
         f"<title>{html.escape(t or 'widget')}</title>"
-        f"<style>{FRAME_BASE_CSS}</style><script>{SDK_JS}</script></head>"
+        f"<style>{FONTS_CSS}{theme}{FRAME_BASE_CSS}</style><script>{SDK_JS}</script></head>"
         f"<body>{code}</body></html>"
     )
     return HTMLResponse(doc, headers={
-        "Content-Security-Policy": FRAME_CSP,
+        # Only this server's /fonts/ path; widgets still cannot reach anything else.
+        "Content-Security-Policy": FRAME_CSP.format(fonts=f"{str(request.base_url).rstrip('/')}/fonts/"),
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "no-referrer",
     })
 
 
+INDEX_HTML = (STATIC / "index.html").read_text()
+
+
 @app.get("/")
 def index():
-    return FileResponse(STATIC / "index.html")
+    # Inline the active theme so the first paint already has the right colors.
+    with closing(db()) as c:
+        css = store.theme_css(store.active_theme(c)["vars"])
+    return HTMLResponse(INDEX_HTML.replace("<!--THEME-->", f'<style id="theme-vars">{css}</style>'),
+                        headers={"Cache-Control": "no-store"})
 
 
 app.mount("/", StaticFiles(directory=STATIC), name="static")

@@ -1,0 +1,11 @@
+{
+  "name": "Exchange rates",
+  "description": "Daily reference exchange rates from the European Central Bank via Frankfurter (no API key).",
+  "size": { "w": 3, "h": 3 },
+  "permissions": { "hosts": ["api.frankfurter.dev"], "secrets": [] },
+  "props": {
+    "base": { "type": "select", "label": "Base currency", "options": ["EUR", "USD", "GBP", "CHF", "JPY", "INR", "CAD", "AUD"], "default": "EUR" },
+    "symbols": { "type": "string", "label": "Show (comma-separated)", "default": "USD,GBP,CHF,JPY,INR" },
+    "amount": { "type": "number", "label": "Amount", "default": 1 }
+  }
+}

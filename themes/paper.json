@@ -1,0 +1,24 @@
+{
+  "name": "Paper",
+  "description": "Warm light theme with soft paper tones.",
+  "vars": {
+    "--scheme": "light",
+    "--bg": "#f3efe7",
+    "--card": "#fffdf8",
+    "--surface": "#efe9de",
+    "--border": "#ddd5c6",
+    "--text": "#25221d",
+    "--muted": "#7c766b",
+    "--accent": "#2f6fdf",
+    "--accent-text": "#ffffff",
+    "--danger": "#c23b3b",
+    "--warning": "#b7791f",
+    "--success": "#2e8b52",
+    "--radius": "10px",
+    "--font": "system-ui, -apple-system, 'Segoe UI', sans-serif",
+    "--shadow": "0 1px 2px rgb(60 45 20 / 12%), 0 2px 8px rgb(60 45 20 / 6%)",
+    "--overlay": "rgb(40 30 15 / 35%)",
+    "--accent-2": "#c2410c",
+    "--frame": "linear-gradient(var(--border), var(--border))"
+  }
+}

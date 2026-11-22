@@ -1,0 +1,15 @@
+/*
+ * Bundled web fonts (Latin subset, SIL Open Font License; see licenses/).
+ * Browsers only download a font when a theme actually uses it, so unused fonts cost nothing.
+ * To add a font: drop the .woff2 here, add an @font-face below, and reference the family in a theme's tokens.
+ */
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-weight: 300 700; font-display: swap;
+  src: url("/fonts/space-grotesk.woff2") format("woff2"); }
+@font-face { font-family: "Chakra Petch"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("/fonts/chakra-petch-500.woff2") format("woff2"); }
+@font-face { font-family: "Chakra Petch"; font-style: normal; font-weight: 600; font-display: swap;
+  src: url("/fonts/chakra-petch-600.woff2") format("woff2"); }
+@font-face { font-family: "Chakra Petch"; font-style: normal; font-weight: 700; font-display: swap;
+  src: url("/fonts/chakra-petch-700.woff2") format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url("/fonts/jetbrains-mono.woff2") format("woff2"); }

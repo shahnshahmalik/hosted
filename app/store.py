@@ -11,6 +11,8 @@ from pathlib import Path
 DB_PATH = os.environ.get("HOSTED_DB") or os.environ.get("CANVAS_DB") or "data/canvas.db"
 ROOT = Path(__file__).resolve().parent.parent
 WIDGETS_DIR = ROOT / "widgets"
+THEMES_DIR = ROOT / "themes"
+DEFAULT_THEME = "midnight"  # the reference theme: defines every token
 
 COLS, MAX_ROWS = 12, 200
 SECRET_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
@@ -22,8 +24,16 @@ MAX_CODE = 200 * 1024
 # Where a widget type came from. Only "ai" types may be modified by the AI.
 SOURCES = {"builtin", "ai", "installed"}
 
-THEME_VARS = {"--bg", "--card", "--text", "--muted", "--accent", "--radius", "--font"}
-THEME_VALUE = re.compile(r"""^[#(),.%\w\s'"-]{1,120}$""")
+THEME_VALUE = re.compile(r"""^[#(),./%\w\s'"-]{1,600}$""")
+
+
+def _load_reference_tokens() -> dict:
+    """The default theme file is the single source of truth for which tokens exist."""
+    return json.loads((THEMES_DIR / f"{DEFAULT_THEME}.json").read_text())["vars"]
+
+
+REFERENCE_VARS = _load_reference_tokens()
+THEME_VARS = set(REFERENCE_VARS)
 
 
 class StoreError(ValueError):
@@ -56,6 +66,8 @@ def migrate():
             CREATE TABLE IF NOT EXISTS widget_storage (
               wid TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (wid, key));
             CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS themes (
+              id TEXT PRIMARY KEY, data TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'user');
             CREATE TABLE IF NOT EXISTS chat_messages (
               id INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL,
               created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
@@ -73,6 +85,11 @@ def migrate():
         if "origin" not in defcols:
             # e.g. a GitHub URL + ref for installed plugins; NULL for builtin/ai
             c.execute("ALTER TABLE widget_defs ADD COLUMN origin TEXT")
+        # M3 stored the theme as a flat dict of variables; it is now {id, overrides}.
+        old = c.execute("SELECT value FROM settings WHERE key='theme'").fetchone()
+        if old and "id" not in json.loads(old["value"]):
+            c.execute("UPDATE settings SET value=? WHERE key='theme'",
+                      (json.dumps({"id": DEFAULT_THEME, "overrides": json.loads(old["value"])}),))
         c.commit()
 
 
@@ -334,15 +351,79 @@ def set_setting(c, key, value):
 
 
 def validate_theme(vars_: dict) -> dict:
+    if not isinstance(vars_, dict):
+        raise StoreError("theme vars must be an object")
     out = {}
-    for k, v in (vars_ or {}).items():
+    for k, v in vars_.items():
         if k not in THEME_VARS:
-            raise StoreError(f"unknown theme variable {k}; allowed: {', '.join(sorted(THEME_VARS))}")
+            raise StoreError(f"unknown theme token {k}; allowed: {', '.join(sorted(THEME_VARS))}")
         v = str(v).strip()
         if not THEME_VALUE.match(v) or "url(" in v.lower() or "expression" in v.lower():
             raise StoreError(f"invalid value for {k}: {v!r}")
+        if k == "--scheme" and v not in ("dark", "light"):
+            raise StoreError("--scheme must be dark or light")
         out[k] = v
     return out
+
+
+def seed_themes():
+    """Load themes/<id>.json as builtin themes (overwritten on startup, like builtin widgets)."""
+    if not THEMES_DIR.is_dir():
+        return
+    with closing(db()) as c:
+        for f in sorted(THEMES_DIR.glob("*.json")):
+            raw = json.loads(f.read_text())
+            data = {"name": str(raw.get("name", f.stem))[:60], "description": str(raw.get("description", ""))[:300],
+                    "vars": validate_theme(raw.get("vars", {}))}
+            c.execute("INSERT INTO themes (id, data, source) VALUES (?,?,'builtin') "
+                      "ON CONFLICT(id) DO UPDATE SET data=excluded.data WHERE themes.source='builtin'",
+                      (f.stem, json.dumps(data)))
+        c.commit()
+
+
+def list_themes(c):
+    return [{"id": r["id"], "source": r["source"], **json.loads(r["data"])}
+            for r in c.execute("SELECT * FROM themes ORDER BY source != 'builtin', id")]
+
+
+def get_theme(c, theme_id):
+    r = c.execute("SELECT * FROM themes WHERE id=?", (theme_id,)).fetchone()
+    return {"id": r["id"], "source": r["source"], **json.loads(r["data"])} if r else None
+
+
+def save_theme(c, theme_id, name, description, vars_, source):
+    if not TYPE_ID.match(theme_id or ""):
+        raise StoreError("theme id must be lowercase letters, digits and dashes")
+    old = get_theme(c, theme_id)
+    if old and old["source"] != source:
+        raise StoreError(f"theme {theme_id!r} is {old['source']} and cannot be overwritten; choose a new id")
+    data = {"name": str(name or theme_id)[:60], "description": str(description or "")[:300],
+            "vars": validate_theme(vars_)}
+    c.execute("INSERT OR REPLACE INTO themes (id, data, source) VALUES (?,?,?)", (theme_id, json.dumps(data), source))
+    c.commit()
+    return get_theme(c, theme_id)
+
+
+def active_theme(c) -> dict:
+    """Effective theme = reference tokens <- selected theme <- per-dashboard overrides."""
+    sel = get_setting(c, "theme", {}) or {}
+    theme = get_theme(c, sel.get("id") or DEFAULT_THEME) or get_theme(c, DEFAULT_THEME) or {"id": DEFAULT_THEME, "vars": {}}
+    overrides = sel.get("overrides") or {}
+    return {"id": theme["id"], "name": theme.get("name", theme["id"]), "overrides": overrides,
+            "vars": {**REFERENCE_VARS, **theme["vars"], **overrides}}
+
+
+def set_active_theme(c, theme_id, overrides=None) -> dict:
+    if not get_theme(c, theme_id):
+        raise StoreError(f"unknown theme {theme_id!r}")
+    set_setting(c, "theme", {"id": theme_id, "overrides": validate_theme(overrides or {})})
+    return active_theme(c)
+
+
+def theme_css(vars_: dict) -> str:
+    """Render tokens as a :root rule. Values are validated, so they cannot break out of the rule."""
+    body = "".join(f"{k}:{v};" for k, v in vars_.items() if k in THEME_VARS and THEME_VALUE.match(v))
+    return f":root{{{body}color-scheme:{vars_.get('--scheme', 'dark')};}}"
 
 
 def secret_names(c):

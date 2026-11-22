@@ -1,0 +1,10 @@
+{
+  "name": "Hacker News",
+  "description": "Top stories from Hacker News. Click a story to open it.",
+  "size": { "w": 4, "h": 4 },
+  "permissions": { "hosts": ["hacker-news.firebaseio.com"], "secrets": [] },
+  "props": {
+    "feed": { "type": "select", "label": "Feed", "options": ["top", "best", "new", "ask", "show"], "default": "top" },
+    "count": { "type": "number", "label": "Stories", "default": 10 }
+  }
+}

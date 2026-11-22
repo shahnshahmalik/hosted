@@ -42,9 +42,11 @@ An HTML fragment placed in `<body>`. The SDK is available as `window.hosted`:
 | `hosted.hasSecret(name)` | whether a granted secret is set (value never exposed) |
 | `hosted.storage.get/set/remove(key)` | per-instance JSON KV (64 KB/value, 100 keys) |
 | `hosted.setProps(partial)` | persist settings from inside the widget |
+| `hosted.openUrl(url)` | open an http(s) link in a new tab; only honoured during a real user click |
 
-Theme CSS variables (`--text`, `--muted`, `--accent`, `--card`, `--bg`, `--radius`) are set on
-`:root`; `.muted` and `.error` classes are predefined. Uncaught errors are shown on the widget.
+Style widgets only with theme tokens (see `themes/README.md`), e.g. `var(--text)`, `var(--surface)`,
+`var(--accent)`, `var(--font-display)`; they are set on `:root` and update live when the user
+switches themes. `.muted`, `.error` and `.label` classes are predefined. Uncaught errors are shown on the widget.
 
 ## Security model
 

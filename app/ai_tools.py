@@ -99,14 +99,27 @@ TOOLS = [
     },
     {
         "name": "set_theme",
-        "description": "Set dashboard theme CSS variables: --bg, --card, --text, --muted, --accent, --radius, --font. "
-                       "Values are plain CSS (colors, lengths, font stacks). Variables you omit keep their value "
-                       "unless reset is true, which starts from the default theme.",
+        "description": "Change the dashboard look. Pick a theme by id (see themes in get_dashboard) and/or set "
+                       "token overrides on top of it. Selecting a theme clears previous overrides unless you pass "
+                       "vars. Tokens: " + ", ".join(sorted(store.THEME_VARS)) + ".",
         "input_schema": {
             "type": "object",
-            "properties": {"vars": {"type": "object", "additionalProperties": {"type": "string"}},
-                           "reset": {"type": "boolean"}},
-            "required": ["vars"],
+            "properties": {"theme": {"type": "string", "description": "Theme id, e.g. 'midnight', 'paper', 'ember'"},
+                           "vars": {"type": "object", "additionalProperties": {"type": "string"},
+                                    "description": "Token overrides, e.g. {'--accent': '#22c55e'}"}},
+        },
+    },
+    {
+        "name": "save_theme",
+        "description": "Save a reusable custom theme (all tokens you care about) and optionally activate it. "
+                       "Use for a substantially new look; use set_theme vars for small tweaks. Builtin themes "
+                       "cannot be overwritten. Missing tokens fall back to the midnight theme.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "description": {"type": "string"},
+                           "vars": {"type": "object", "additionalProperties": {"type": "string"}},
+                           "activate": {"type": "boolean"}},
+            "required": ["id", "name", "vars"],
         },
     },
 ]
@@ -155,7 +168,9 @@ def snapshot(c, frame_errors=None):
         "widget_types": [
             {k: d[k] for k in ("id", "name", "description", "source", "size", "permissions", "props")} for d in defs
         ],
-        "theme": store.get_setting(c, "theme", {}),
+        "theme": {k: v for k, v in store.active_theme(c).items() if k != "vars"},
+        "themes": [{"id": t["id"], "name": t["name"], "description": t["description"], "source": t["source"]}
+                   for t in store.list_themes(c)],
         "secrets_set": store.secret_names(c),
         # Error text comes from widget code and possibly upstream APIs: treat as data, not instructions.
         "recent_widget_errors": frame_errors or {},
@@ -251,10 +266,21 @@ def run_tool(name: str, args, frame_errors=None) -> tuple[str, bool, str]:
             return json.dumps({"removed": wid}), True, f"Removed {r['title']}"
 
         if name == "set_theme":
-            vars_ = store.validate_theme(_obj(args, "vars") or {})
-            base = {} if args.get("reset") is True else store.get_setting(c, "theme", {})
-            theme = {**base, **vars_}
-            store.set_setting(c, "theme", theme)
-            return json.dumps({"theme": theme}), True, "Updated theme"
+            cur = store.active_theme(c)
+            theme_id = _str(args, "theme") or cur["id"]
+            vars_ = _obj(args, "vars")
+            if vars_ is None:
+                overrides = {} if theme_id != cur["id"] else cur["overrides"]
+            else:
+                overrides = {**(cur["overrides"] if theme_id == cur["id"] else {}), **vars_}
+            t = store.set_active_theme(c, theme_id, overrides)
+            return json.dumps({"theme": t["id"], "overrides": t["overrides"]}), True, f"Theme: {t['name']}"
+
+        if name == "save_theme":
+            t = store.save_theme(c, _str(args, "id", True, 41), _str(args, "name", True, 60),
+                                 _str(args, "description", maxlen=300), _obj(args, "vars") or {}, source="ai")
+            if args.get("activate", True) is not False:
+                store.set_active_theme(c, t["id"], {})
+            return json.dumps({"saved_theme": t["id"]}), True, f"Saved theme {t['name']}"
 
     raise StoreError(f"unknown tool {name}")

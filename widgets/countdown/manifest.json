@@ -1,0 +1,10 @@
+{
+  "name": "Countdown",
+  "description": "Counts down to (or up from) a date and time. No network access.",
+  "size": { "w": 3, "h": 2 },
+  "permissions": { "hosts": [], "secrets": [] },
+  "props": {
+    "label": { "type": "string", "label": "Label", "default": "New Year" },
+    "date": { "type": "string", "label": "Date and time (YYYY-MM-DD HH:MM, local)", "default": "2027-01-01 00:00" }
+  }
+}

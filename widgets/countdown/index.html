@@ -1,0 +1,26 @@
+<style>
+  body { display: flex; flex-direction: column; justify-content: center; }
+  .units { display: flex; gap: clamp(6px, 3vw, 14px); align-items: baseline; flex-wrap: wrap; }
+  .u b { font-family: var(--font-display); font-size: clamp(20px, 11vw, 40px); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--accent); }
+  .u span { font-size: 11px; margin-left: 2px; }
+  .label { margin-top: 4px; }
+</style>
+<div class="units" id="u"></div>
+<div class="label muted" id="l"></div>
+<script>
+  hosted.ready.then((h) => {
+    const u = document.getElementById("u"), l = document.getElementById("l");
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    const tick = () => {
+      const target = new Date(String(h.props.date || "").trim().replace(" ", "T"));
+      if (isNaN(target)) { u.innerHTML = '<span class="error">Set a date as YYYY-MM-DD HH:MM</span>'; l.textContent = ""; return; }
+      let ms = target - Date.now();
+      const past = ms < 0; ms = Math.abs(ms);
+      const parts = [["d", 864e5], ["h", 36e5], ["m", 6e4], ["s", 1e3]].map(([k, n]) => { const v = Math.floor(ms / n); ms -= v * n; return [k, v]; });
+      const shown = parts[0][1] > 0 ? parts : parts.slice(1);
+      u.innerHTML = shown.map(([k, v]) => `<div class="u"><b>${k === "d" ? v : String(v).padStart(2, "0")}</b><span class="muted">${k}</span></div>`).join("");
+      l.innerHTML = `${past ? "since" : "until"} ${esc(h.props.label || "")} · ${target.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`;
+    };
+    tick(); setInterval(tick, 1000); h.onProps(tick);
+  });
+</script>

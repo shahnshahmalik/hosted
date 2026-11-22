@@ -6,17 +6,15 @@ import { Chat } from "/chat.js";
 
 const html = htm.bind(h);
 const COLS = 12, GAP = 12, ROW = 80;
-const THEME_VARS = ["--bg", "--card", "--text", "--muted", "--accent", "--radius", "--font"];
 
 const css = (r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v + "px"])); // Preact 11 won't add px
 
 const overlaps = (a, b) =>
   a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
-const themeVars = () => {
-  const s = getComputedStyle(document.documentElement);
-  return Object.fromEntries(THEME_VARS.map((k) => [k, s.getPropertyValue(k).trim()]));
-};
+// Mirror of store.theme_css(): the server inlines the same rule on first paint.
+const themeCss = (vars) =>
+  `:root{${Object.entries(vars).map(([k, v]) => `${k}:${v};`).join("")}color-scheme:${vars["--scheme"] || "dark"};}`;
 
 const propsFor = (w, def) => {
   const defaults = Object.fromEntries(Object.entries(def?.props || {}).map(([k, p]) => [k, p.default]));
@@ -33,18 +31,20 @@ function App() {
   const [editing, setEditing] = useState(null); // widget id with settings open
   const [frameErrors, setFrameErrors] = useState({}); // wid -> message
   const [drag, setDrag] = useState(null);
-  const [theme, setTheme] = useState({});
+  const [theme, setTheme] = useState({ vars: {} }); // {id, name, overrides, vars}
+  const [themes, setThemes] = useState([]);
   const [chatOpen, setChatOpen] = useState(localStorage.getItem("hosted.chat") === "1");
   const [nonces, setNonces] = useState({}); // wid -> manual reload counter (part of the frame key)
   const gridRef = useRef();
   const frames = useRef({}); // wid -> iframe element
   const loads = useRef({}); // frame key -> load count (navigation detection)
   const ctx = useRef({}); // always-current data for the message handler
-  ctx.current = { defs, secretNames };
+  ctx.current = { defs, secretNames, theme };
   const [width, setWidth] = useState(1000);
 
   const refresh = async () => {
-    const [ws, ds, th] = await Promise.all([api("/widgets"), api("/widget-defs"), api("/theme")]);
+    const [ws, ds, th, tl] = await Promise.all([api("/widgets"), api("/widget-defs"), api("/theme"), api("/themes")]);
+    setThemes(tl);
     for (const k of Object.keys(frames.current)) if (!ws.some((w) => w.id === k)) delete frames.current[k];
     setDefs(Object.fromEntries(ds.map((d) => [d.id, d])));
     setWidgets(ws);
@@ -56,9 +56,8 @@ function App() {
   }, []);
   useEffect(() => { localStorage.setItem("hosted.chat", chatOpen ? "1" : "0"); }, [chatOpen]);
   useEffect(() => {
-    const root = document.documentElement.style;
-    THEME_VARS.forEach((k) => root.removeProperty(k));
-    Object.entries(theme).forEach(([k, v]) => root.setProperty(k, v));
+    if (!theme.id) return;
+    document.getElementById("theme-vars").textContent = themeCss(theme.vars);
     latest.current.forEach(pushUpdate);
   }, [theme]);
   useEffect(() => {
@@ -72,7 +71,7 @@ function App() {
     id: w.id,
     props: propsFor(w, ctx.current.defs[w.config.type]),
     secrets: (w.grants?.secrets || []).filter((n) => ctx.current.secretNames.includes(n)),
-    theme: themeVars(),
+    theme: ctx.current.theme.vars,
   });
   const post = (wid, msg) => frames.current[wid]?.contentWindow?.postMessage({ hosted: 1, ...msg }, "*");
   const pushUpdate = (w) => post(w.id, { type: "update", payload: framePayload(w) });
@@ -91,6 +90,15 @@ function App() {
     "storage.get": async (w, p) => (await api(`/widgets/${w.id}/storage/${encodeURIComponent(p.key)}`)).value,
     "storage.set": (w, p) => api(`/widgets/${w.id}/storage/${encodeURIComponent(p.key)}`, "PUT", { value: p.value ?? null }),
     "storage.remove": (w, p) => api(`/widgets/${w.id}/storage/${encodeURIComponent(p.key)}`, "DELETE"),
+    open: async (w, p) => {
+      // A user click inside the frame also activates this page (activation propagates to
+      // ancestors), so requiring it means a widget cannot open tabs on its own.
+      const url = new URL(p.url);
+      if (!["http:", "https:"].includes(url.protocol)) throw new Error("only http(s) links can be opened");
+      if (!navigator.userActivation?.isActive) throw new Error("links can only be opened from a click");
+      window.open(url.href, "_blank", "noopener,noreferrer");
+      return null;
+    },
     "props.set": async (w, p) => {
       const props = { ...(w.config.props || {}), ...(p.props || {}) };
       await saveWidget({ ...w, config: { ...w.config, props } });
@@ -208,8 +216,12 @@ function App() {
 
   return html`
     <header>
-      <h1>Hosted</h1>
+      <h1>Host<span>ed</span></h1>
       <div class="actions">
+        <select class="theme-select" title="Theme" value=${theme.id}
+                onChange=${async (e) => setTheme(await api("/theme", "PUT", { id: e.currentTarget.value }))}>
+          ${themes.map((t) => html`<option value=${t.id}>${t.name}${t.source !== "builtin" ? " (custom)" : ""}</option>`)}
+        </select>
         <button class="ghost" onClick=${() => setModal("secrets")}>Secrets</button>
         <button class="ghost" onClick=${() => setModal("picker")}>+ Add widget</button>
         <button class=${chatOpen ? "ghost active" : ""} onClick=${() => setChatOpen(!chatOpen)}>✦ Assistant</button>
@@ -234,7 +246,7 @@ function App() {
         const fk = frameKey(w);
         const missing = (w.grants?.secrets || []).filter((n) => !secretNames.includes(n));
         return html`
-          <div key=${w.id} class=${"widget" + (isDrag ? " dragging" : "")} style=${css(style)} data-wid=${w.id}>
+          <div key=${w.id} class=${"widget framed" + (isDrag ? " dragging" : "")} style=${css(style)} data-wid=${w.id}>
             <div class="widget-head" onPointerDown=${(e) => start(e, w, "move")}>
               <span class="title">${w.title}</span>
               <span class="tools" onPointerDown=${(e) => e.stopPropagation()}>
@@ -279,7 +291,7 @@ function App() {
 function Modal({ title, onClose, children }) {
   return html`
     <div class="modal-backdrop" onClick=${(e) => e.target === e.currentTarget && onClose()}>
-      <div class="modal" role="dialog" aria-label=${title}>
+      <div class="modal framed" role="dialog" aria-label=${title}>
         <div class="modal-head"><h2>${title}</h2><button class="ghost" onClick=${onClose}>✕</button></div>
         ${children}
       </div>

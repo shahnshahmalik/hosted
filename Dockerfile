@@ -5,6 +5,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app app
 COPY static static
 COPY widgets widgets
+COPY themes themes
 ENV CANVAS_DB=/data/canvas.db
 VOLUME /data
 EXPOSE 8080

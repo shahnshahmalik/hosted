@@ -1,0 +1,28 @@
+<style>
+  body { padding-bottom: 8px; display: flex; flex-direction: column; }
+  textarea { flex: 1; width: 100%; resize: none; border: 0; outline: none; background: transparent;
+    color: var(--text); font: inherit; line-height: 1.5; padding: 0; }
+  textarea.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .status { font-size: 11px; height: 14px; text-align: right; }
+</style>
+<textarea id="t" aria-label="Note" disabled></textarea>
+<div class="status muted" id="s"></div>
+<script>
+  hosted.ready.then(async (h) => {
+    const t = document.getElementById("t"), s = document.getElementById("s");
+    const apply = () => { t.placeholder = h.props.placeholder || ""; t.classList.toggle("mono", !!h.props.monospace); };
+    apply(); h.onProps(apply);
+    t.value = (await h.storage.get("text")) || "";
+    t.disabled = false;
+    let timer;
+    t.addEventListener("input", () => {
+      s.textContent = "…";
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        try { await h.storage.set("text", t.value.slice(0, 60000)); s.textContent = "Saved"; }
+        catch (e) { s.innerHTML = '<span class="error">Not saved</span>'; }
+        setTimeout(() => { if (s.textContent === "Saved") s.textContent = ""; }, 1500);
+      }, 600);
+    });
+  });
+</script>
