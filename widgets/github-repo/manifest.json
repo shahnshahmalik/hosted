@@ -1,0 +1,9 @@
+{
+  "name": "GitHub repo",
+  "description": "Stars, forks, issues and latest release for a repository. Optional GITHUB_TOKEN secret raises rate limits and enables private repos.",
+  "size": { "w": 3, "h": 2 },
+  "permissions": { "hosts": ["api.github.com"], "secrets": ["GITHUB_TOKEN"] },
+  "props": {
+    "repo": { "type": "string", "label": "Repository (owner/name)", "default": "preactjs/preact" }
+  }
+}

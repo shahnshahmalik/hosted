@@ -1,0 +1,22 @@
+<style>
+  .wrap { height: 100%; display: flex; flex-direction: column; justify-content: center; }
+  .time { font-size: clamp(24px, 22vw, 64px); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
+  .date { margin-top: 6px; }
+</style>
+<div class="wrap"><div class="time" id="time">--:--</div><div class="date muted" id="date"></div></div>
+<script>
+  hosted.ready.then((h) => {
+    const t = document.getElementById("time"), d = document.getElementById("date");
+    const tick = () => {
+      const p = h.props, now = new Date();
+      const tz = p.timezone || undefined;
+      try {
+        t.textContent = now.toLocaleTimeString([], { timeZone: tz, hour12: !!p.hour12, hour: "2-digit",
+          minute: "2-digit", second: p.seconds ? "2-digit" : undefined });
+        d.textContent = now.toLocaleDateString([], { timeZone: tz, weekday: "long", month: "long", day: "numeric" })
+          + (tz ? " · " + tz : "");
+      } catch (e) { t.textContent = "--:--"; d.innerHTML = '<span class="error">Unknown time zone</span>'; }
+    };
+    tick(); setInterval(tick, 1000); h.onProps(tick);
+  });
+</script>

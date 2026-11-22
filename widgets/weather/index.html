@@ -1,0 +1,44 @@
+<style>
+  .now { display: flex; align-items: baseline; gap: 10px; }
+  .temp { font-size: 40px; font-weight: 600; }
+  .days { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 12px; text-align: center; }
+  .day { background: color-mix(in srgb, var(--text) 6%, transparent); border-radius: 8px; padding: 6px 2px; }
+  .ico { font-size: 20px; }
+</style>
+<div id="out" class="muted">Loading…</div>
+<script>
+  const ICONS = [[0, "☀️", "Clear"], [2, "⛅", "Partly cloudy"], [3, "☁️", "Overcast"], [48, "🌫️", "Fog"],
+    [57, "🌦️", "Drizzle"], [67, "🌧️", "Rain"], [77, "🌨️", "Snow"], [82, "🌧️", "Showers"],
+    [86, "🌨️", "Snow showers"], [99, "⛈️", "Thunderstorm"]];
+  const wmo = (c) => ICONS.find(([max]) => c <= max) || ICONS[ICONS.length - 1];
+  const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+  const out = document.getElementById("out");
+
+  async function load(h) {
+    const { city, units } = h.props;
+    try {
+      const g = await (await h.fetch(`https://geocoding-api.open-meteo.com/v1/search?count=1&name=${encodeURIComponent(city)}`)).json();
+      const place = g.results && g.results[0];
+      if (!place) { out.innerHTML = `<span class="error">City “${esc(city)}” not found</span>`; return; }
+      const q = new URLSearchParams({ latitude: place.latitude, longitude: place.longitude, timezone: "auto",
+        current: "temperature_2m,weather_code,wind_speed_10m", forecast_days: 3,
+        daily: "weather_code,temperature_2m_max,temperature_2m_min", temperature_unit: units });
+      const r = await h.fetch(`https://api.open-meteo.com/v1/forecast?${q}`);
+      if (!r.ok) throw new Error(`forecast HTTP ${r.status}`);
+      const w = await r.json(), u = units === "fahrenheit" ? "°F" : "°C";
+      const [, icon, label] = wmo(w.current.weather_code);
+      const days = w.daily.time.map((t, i) => `<div class="day">
+          <div class="muted">${new Date(t + "T12:00").toLocaleDateString([], { weekday: "short" })}</div>
+          <div class="ico">${wmo(w.daily.weather_code[i])[1]}</div>
+          <div>${Math.round(w.daily.temperature_2m_max[i])}° <span class="muted">${Math.round(w.daily.temperature_2m_min[i])}°</span></div>
+        </div>`).join("");
+      out.className = "";
+      out.innerHTML = `<div class="muted">${esc(place.name)}${place.country_code ? ", " + esc(place.country_code) : ""}</div>
+        <div class="now"><span class="temp">${Math.round(w.current.temperature_2m)}${u}</span><span>${icon} ${label}</span></div>
+        <div class="muted">Wind ${Math.round(w.current.wind_speed_10m)} km/h</div><div class="days">${days}</div>`;
+    } catch (e) {
+      out.innerHTML = `<span class="error">${esc(e.message)}</span>`;
+    }
+  }
+  hosted.ready.then((h) => { load(h); setInterval(() => load(h), 15 * 60e3); h.onProps(() => load(h)); });
+</script>

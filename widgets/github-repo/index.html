@@ -1,0 +1,50 @@
+<style>
+  .name { font-weight: 600; font-size: 15px; margin-bottom: 8px; word-break: break-all; }
+  .stats { display: flex; gap: 14px; flex-wrap: wrap; }
+  .stat b { display: block; font-size: 20px; }
+  .foot { margin-top: 8px; font-size: 12px; }
+</style>
+<div id="out" class="muted">Loading…</div>
+<script>
+  const out = document.getElementById("out");
+  const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+  const fmt = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 1e4 ? 0 : 1) + "k" : String(n));
+
+  function render(d, note) {
+    out.className = "";
+    out.innerHTML = `<div class="name">${esc(d.full_name)}</div>
+      <div class="stats">
+        <div class="stat"><b>${fmt(d.stars)}</b><span class="muted">stars</span></div>
+        <div class="stat"><b>${fmt(d.forks)}</b><span class="muted">forks</span></div>
+        <div class="stat"><b>${fmt(d.issues)}</b><span class="muted">open issues</span></div>
+      </div>
+      <div class="foot muted">${d.release ? "Latest " + esc(d.release) + " · " : ""}${esc(note)}</div>`;
+  }
+
+  async function load(h) {
+    const repo = (h.props.repo || "").trim();
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) { out.innerHTML = '<span class="error">Set repo as owner/name</span>'; return; }
+    const cacheKey = "cache:" + repo;
+    const cached = await h.storage.get(cacheKey);
+    if (cached) render(cached.data, "cached " + new Date(cached.at).toLocaleTimeString());
+    // The token placeholder is filled in by the server; this frame never sees its value.
+    const headers = { Accept: "application/vnd.github+json" };
+    if (h.hasSecret("GITHUB_TOKEN")) headers.Authorization = "Bearer {{secret.GITHUB_TOKEN}}";
+    try {
+      const r = await h.fetch(`https://api.github.com/repos/${repo}`, { headers });
+      if (!r.ok) throw new Error(r.status === 404 ? "Repo not found" : `GitHub HTTP ${r.status}`);
+      const j = await r.json();
+      let release = null;
+      const rr = await h.fetch(`https://api.github.com/repos/${repo}/releases/latest`, { headers });
+      if (rr.ok) release = (await rr.json()).tag_name;
+      const data = { full_name: j.full_name, stars: j.stargazers_count, forks: j.forks_count,
+        issues: j.open_issues_count, release };
+      await h.storage.set(cacheKey, { data, at: Date.now() });
+      render(data, (h.hasSecret("GITHUB_TOKEN") ? "authenticated" : "anonymous") +
+        (r.headers["x-ratelimit-remaining"] ? ` · ${r.headers["x-ratelimit-remaining"]} calls left` : ""));
+    } catch (e) {
+      if (!cached) out.innerHTML = `<span class="error">${esc(e.message)}</span>`;
+    }
+  }
+  hosted.ready.then((h) => { load(h); setInterval(() => load(h), 10 * 60e3); h.onProps(() => load(h)); });
+</script>

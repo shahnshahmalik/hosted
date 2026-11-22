@@ -1,0 +1,11 @@
+{
+  "name": "Clock",
+  "description": "Current time and date. No network access.",
+  "size": { "w": 3, "h": 2 },
+  "permissions": { "hosts": [], "secrets": [] },
+  "props": {
+    "timezone": { "type": "string", "label": "Time zone (IANA, blank = local)", "default": "" },
+    "hour12": { "type": "boolean", "label": "12-hour clock", "default": false },
+    "seconds": { "type": "boolean", "label": "Show seconds", "default": true }
+  }
+}

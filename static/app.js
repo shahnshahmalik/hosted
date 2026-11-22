@@ -1,0 +1,356 @@
+import { h, render } from "preact";
+import { useState, useEffect, useRef } from "preact/hooks";
+import htm from "htm";
+
+const html = htm.bind(h);
+const COLS = 12, GAP = 12, ROW = 80;
+const THEME_VARS = ["--bg", "--card", "--text", "--muted", "--accent", "--radius"];
+
+const api = async (path, method = "GET", body) => {
+  const r = await fetch("/api" + path, {
+    method,
+    headers: body !== undefined ? { "Content-Type": "application/json" } : {},
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!r.ok) {
+    let detail = `${method} ${path} failed: ${r.status}`;
+    try { detail = (await r.json()).detail || detail; } catch {}
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
+  return r.status === 204 ? null : r.json();
+};
+
+const css = (r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v + "px"])); // Preact 11 won't add px
+
+const overlaps = (a, b) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+const themeVars = () => {
+  const s = getComputedStyle(document.documentElement);
+  return Object.fromEntries(THEME_VARS.map((k) => [k, s.getPropertyValue(k).trim()]));
+};
+
+const propsFor = (w, def) => {
+  const defaults = Object.fromEntries(Object.entries(def?.props || {}).map(([k, p]) => [k, p.default]));
+  return { ...defaults, ...(w.config.props || {}) };
+};
+
+function App() {
+  const [widgets, setWidgetsState] = useState([]);
+  const latest = useRef([]); // always-current list, so rapid actions never use stale state
+  const setWidgets = (list) => { latest.current = list; setWidgetsState(list); };
+  const [defs, setDefs] = useState({});
+  const [secretNames, setSecretNames] = useState([]);
+  const [modal, setModal] = useState(null); // "picker" | "secrets" | null
+  const [editing, setEditing] = useState(null); // widget id with settings open
+  const [frameErrors, setFrameErrors] = useState({}); // wid -> message
+  const [drag, setDrag] = useState(null);
+  const gridRef = useRef();
+  const frames = useRef({}); // wid -> iframe element
+  const loads = useRef({}); // wid -> load count (navigation detection)
+  const ctx = useRef({}); // always-current data for the message handler
+  ctx.current = { defs, secretNames };
+  const [width, setWidth] = useState(1000);
+
+  useEffect(() => {
+    api("/widgets").then(setWidgets);
+    api("/widget-defs").then((l) => setDefs(Object.fromEntries(l.map((d) => [d.id, d]))));
+    api("/secrets").then(setSecretNames);
+  }, []);
+  useEffect(() => {
+    const ro = new ResizeObserver(() => setWidth(gridRef.current.clientWidth));
+    ro.observe(gridRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // ---------- widget runtime bridge ----------
+  const framePayload = (w) => ({
+    id: w.id,
+    props: propsFor(w, ctx.current.defs[w.config.type]),
+    secrets: (w.grants?.secrets || []).filter((n) => ctx.current.secretNames.includes(n)),
+    theme: themeVars(),
+  });
+  const post = (wid, msg) => frames.current[wid]?.contentWindow?.postMessage({ hosted: 1, ...msg }, "*");
+  const pushUpdate = (w) => post(w.id, { type: "update", payload: framePayload(w) });
+
+  useEffect(() => { latest.current.forEach(pushUpdate); }, [secretNames, defs]);
+
+  const saveWidget = async (w) => {
+    const saved = await api("/widgets/" + w.id, "PUT", w);
+    setWidgets(latest.current.map((x) => (x.id === w.id ? saved : x)));
+    pushUpdate(saved);
+    return saved;
+  };
+
+  const handlers = {
+    fetch: (w, p) => api(`/widgets/${w.id}/proxy`, "POST", p),
+    "storage.get": async (w, p) => (await api(`/widgets/${w.id}/storage/${encodeURIComponent(p.key)}`)).value,
+    "storage.set": (w, p) => api(`/widgets/${w.id}/storage/${encodeURIComponent(p.key)}`, "PUT", { value: p.value ?? null }),
+    "storage.remove": (w, p) => api(`/widgets/${w.id}/storage/${encodeURIComponent(p.key)}`, "DELETE"),
+    "props.set": async (w, p) => {
+      const props = { ...(w.config.props || {}), ...(p.props || {}) };
+      await saveWidget({ ...w, config: { ...w.config, props } });
+      return null;
+    },
+  };
+
+  useEffect(() => {
+    const onMessage = async (e) => {
+      const m = e.data;
+      if (!m || m.hosted !== 1) return;
+      // Identify the sender by its window object: a frame cannot impersonate another widget.
+      const wid = Object.keys(frames.current).find((k) => frames.current[k]?.contentWindow === e.source);
+      const w = wid && latest.current.find((x) => x.id === wid);
+      if (!w) return;
+      if (m.type === "hello") return post(wid, { type: "init", payload: framePayload(w) });
+      if (m.type === "error") return setFrameErrors((s) => ({ ...s, [wid]: String(m.payload?.message || "error") }));
+      const handler = handlers[m.type];
+      if (!handler) return post(wid, { type: "reply", id: m.id, ok: false, error: `unknown call ${m.type}` });
+      try {
+        post(wid, { type: "reply", id: m.id, ok: true, result: await handler(w, m.payload || {}) });
+      } catch (err) {
+        post(wid, { type: "reply", id: m.id, ok: false, error: err.message });
+      }
+    };
+    addEventListener("message", onMessage);
+    return () => removeEventListener("message", onMessage);
+  }, []);
+
+  const onFrameLoad = (wid, el) => {
+    // The first load is our document. Any later load means the widget navigated itself away.
+    loads.current[wid] = (loads.current[wid] || 0) + 1;
+    if (loads.current[wid] > 1) {
+      el.src = "about:blank";
+      setFrameErrors((s) => ({ ...s, [wid]: "Widget was stopped: it tried to navigate away from its frame." }));
+    }
+  };
+
+  // ---------- layout ----------
+  const cw = (width - GAP * (COLS - 1)) / COLS;
+  const px = (w) => ({
+    left: w.x * (cw + GAP), top: w.y * (ROW + GAP),
+    width: w.w * cw + (w.w - 1) * GAP, height: w.h * ROW + (w.h - 1) * GAP,
+  });
+  const rows = Math.max(6, ...widgets.map((w) => w.y + w.h + 1));
+
+  const queue = useRef(Promise.resolve()); // serialise adds so rapid clicks get distinct slots
+  const add = (def) => (queue.current = queue.current.then(() => doAdd(def)).catch((e) => alert(e.message)));
+  const doAdd = async (def) => {
+    const probe = { w: def.size.w, h: def.size.h };
+    const cur = latest.current;
+    for (let y = 0; ; y++)
+      for (let x = 0; x <= COLS - probe.w; x++) {
+        const cand = { ...probe, x, y };
+        if (!cur.some((o) => overlaps(cand, o))) {
+          const created = await api("/widgets", "POST", { title: def.name, ...cand, config: { type: def.id, props: {} } });
+          return setWidgets([...latest.current, created]);
+        }
+      }
+  };
+
+  const remove = async (id) => {
+    await api("/widgets/" + id, "DELETE");
+    delete frames.current[id];
+    delete loads.current[id];
+    setWidgets(latest.current.filter((w) => w.id !== id));
+  };
+
+  const reload = (id) => {
+    delete loads.current[id];
+    setFrameErrors((s) => ({ ...s, [id]: undefined }));
+    const el = frames.current[id];
+    if (el) el.src = `/frame/${id}?t=${Date.now()}`;
+  };
+
+  const start = (e, w, mode) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDrag({ id: w.id, mode, sx: e.clientX, sy: e.clientY, dx: 0, dy: 0 });
+  };
+
+  const slotFor = (w, d) => {
+    if (d.mode === "move") {
+      const x = Math.min(COLS - w.w, Math.max(0, Math.round((w.x * (cw + GAP) + d.dx) / (cw + GAP))));
+      const y = Math.max(0, Math.round((w.y * (ROW + GAP) + d.dy) / (ROW + GAP)));
+      return { ...w, x, y };
+    }
+    const nw = Math.min(COLS - w.x, Math.max(1, Math.round((w.w * (cw + GAP) + d.dx) / (cw + GAP))));
+    const nh = Math.max(1, Math.round((w.h * (ROW + GAP) + d.dy) / (ROW + GAP)));
+    return { ...w, w: nw, h: nh };
+  };
+
+  const move = (e) => {
+    if (drag) setDrag({ ...drag, dx: e.clientX - drag.sx, dy: e.clientY - drag.sy });
+  };
+
+  const end = async () => {
+    if (!drag) return;
+    const w = widgets.find((x) => x.id === drag.id);
+    const s = slotFor(w, drag);
+    setDrag(null);
+    const blocked = widgets.some((o) => o.id !== w.id && overlaps(s, o));
+    if (blocked || (s.x === w.x && s.y === w.y && s.w === w.w && s.h === w.h)) return;
+    setWidgets(widgets.map((x) => (x.id === w.id ? s : x)));
+    await api("/widgets/" + w.id, "PUT", s);
+  };
+
+  const dragged = drag && widgets.find((w) => w.id === drag.id);
+  const slot = dragged && slotFor(dragged, drag);
+  const slotOk = slot && !widgets.some((o) => o.id !== slot.id && overlaps(slot, o));
+
+  return html`
+    <header>
+      <h1>Hosted</h1>
+      <div class="actions">
+        <button class="ghost" onClick=${() => setModal("secrets")}>Secrets</button>
+        <button onClick=${() => setModal("picker")}>+ Add widget</button>
+      </div>
+    </header>
+    <div class=${"grid" + (drag ? " is-dragging" : "")} ref=${gridRef} style=${css({ height: rows * (ROW + GAP) })}
+         onPointerMove=${move} onPointerUp=${end}>
+      ${slot && slotOk && html`<div class="ghost-slot" style=${css(px(slot))}></div>`}
+      ${widgets.map((w) => {
+        const isDrag = drag && drag.id === w.id;
+        const style = px(w);
+        if (isDrag && drag.mode === "move") { style.left += drag.dx; style.top += drag.dy; }
+        if (isDrag && drag.mode === "resize") {
+          style.width = Math.max(cw, style.width + drag.dx);
+          style.height = Math.max(ROW, style.height + drag.dy);
+        }
+        const def = defs[w.config.type];
+        const missing = (w.grants?.secrets || []).filter((n) => !secretNames.includes(n));
+        return html`
+          <div key=${w.id} class=${"widget" + (isDrag ? " dragging" : "")} style=${css(style)} data-wid=${w.id}>
+            <div class="widget-head" onPointerDown=${(e) => start(e, w, "move")}>
+              <span class="title">${w.title}</span>
+              <span class="tools" onPointerDown=${(e) => e.stopPropagation()}>
+                ${def && html`<button class="ghost" title="Settings" onClick=${() => setEditing(editing === w.id ? null : w.id)}>⚙</button>`}
+                <button class="ghost" title="Remove" onClick=${() => remove(w.id)}>✕</button>
+              </span>
+            </div>
+            ${frameErrors[w.id] && html`
+              <div class="frame-error" title=${frameErrors[w.id]}>
+                <span>${frameErrors[w.id]}</span>
+                <button class="ghost" onClick=${() => reload(w.id)}>Reload</button>
+              </div>`}
+            ${editing === w.id && def
+              ? html`<${Settings} w=${w} def=${def} missing=${missing} secretNames=${secretNames}
+                        onCancel=${() => setEditing(null)}
+                        onSave=${async (next) => { await saveWidget(next); setEditing(null); }} />`
+              : null}
+            <iframe class=${"widget-frame" + (editing === w.id ? " hidden" : "")}
+                    src=${"/frame/" + w.id} sandbox="allow-scripts" referrerpolicy="no-referrer"
+                    title=${w.title}
+                    ref=${(el) => { if (el) frames.current[w.id] = el; }}
+                    onLoad=${(e) => onFrameLoad(w.id, e.currentTarget)}></iframe>
+            <div class="resize" onPointerDown=${(e) => start(e, w, "resize")}></div>
+          </div>`;
+      })}
+    </div>
+    ${modal === "picker" && html`<${Picker} defs=${Object.values(defs)} secretNames=${secretNames}
+        onClose=${() => setModal(null)} onAdd=${(d) => { add(d); setModal(null); }} />`}
+    ${modal === "secrets" && html`<${Secrets} names=${secretNames} defs=${Object.values(defs)}
+        onChange=${setSecretNames} onClose=${() => setModal(null)} />`}`;
+}
+
+function Modal({ title, onClose, children }) {
+  return html`
+    <div class="modal-backdrop" onClick=${(e) => e.target === e.currentTarget && onClose()}>
+      <div class="modal" role="dialog" aria-label=${title}>
+        <div class="modal-head"><h2>${title}</h2><button class="ghost" onClick=${onClose}>✕</button></div>
+        ${children}
+      </div>
+    </div>`;
+}
+
+function Permissions({ perms, secretNames }) {
+  const { hosts = [], secrets = [] } = perms || {};
+  if (!hosts.length && !secrets.length) return html`<div class="perm muted">No network access</div>`;
+  return html`<div class="perm">
+    ${hosts.length > 0 && html`<div>Can contact: ${hosts.map((x) => html`<code>${x}</code> `)}</div>`}
+    ${secrets.length > 0 && html`<div>Can use secrets: ${secrets.map((s) => html`
+      <code class=${secretNames.includes(s) ? "" : "unset"} title=${secretNames.includes(s) ? "set" : "not set"}>${s}</code> `)}</div>`}
+  </div>`;
+}
+
+function Picker({ defs, secretNames, onClose, onAdd }) {
+  return html`<${Modal} title="Add widget" onClose=${onClose}>
+    <p class="muted small">Adding a widget grants it the permissions listed. It runs in a sandbox and can only reach these hosts through the server.</p>
+    <div class="def-list">
+      ${defs.map((d) => html`
+        <div class="def" data-def=${d.id}>
+          <div class="def-main">
+            <b>${d.name}</b>
+            <div class="muted small">${d.description}</div>
+            <${Permissions} perms=${d.permissions} secretNames=${secretNames} />
+          </div>
+          <button onClick=${() => onAdd(d)}>Add</button>
+        </div>`)}
+    </div>
+  <//>`;
+}
+
+function Settings({ w, def, missing, secretNames, onSave, onCancel }) {
+  const [title, setTitle] = useState(w.title);
+  const [props, setProps] = useState(propsFor(w, def));
+  const [err, setErr] = useState(null);
+  const set = (k, v) => setProps({ ...props, [k]: v });
+  const submit = async (e) => {
+    e.preventDefault();
+    try { await onSave({ ...w, title: title || def.name, config: { ...w.config, props } }); }
+    catch (x) { setErr(x.message); }
+  };
+  return html`<form class="settings" onSubmit=${submit}>
+    <label>Title<input value=${title} onInput=${(e) => setTitle(e.currentTarget.value)} /></label>
+    ${Object.entries(def.props || {}).map(([k, p]) => {
+      const label = p.label || k;
+      if (p.type === "boolean")
+        return html`<label class="check"><input type="checkbox" checked=${!!props[k]}
+          onChange=${(e) => set(k, e.currentTarget.checked)} /> ${label}</label>`;
+      if (p.type === "select")
+        return html`<label>${label}<select value=${props[k]} onChange=${(e) => set(k, e.currentTarget.value)}>
+          ${(p.options || []).map((o) => html`<option value=${o}>${o}</option>`)}</select></label>`;
+      return html`<label>${label}<input type=${p.type === "number" ? "number" : "text"} value=${props[k] ?? ""}
+        onInput=${(e) => set(k, p.type === "number" ? Number(e.currentTarget.value) : e.currentTarget.value)} /></label>`;
+    })}
+    <${Permissions} perms=${w.grants} secretNames=${secretNames} />
+    ${missing.length > 0 && html`<div class="muted small">Missing secrets: ${missing.join(", ")} (set them under Secrets)</div>`}
+    ${err && html`<div class="error small">${err}</div>`}
+    <div class="row"><button type="submit">Save</button><button type="button" class="ghost" onClick=${onCancel}>Cancel</button></div>
+  </form>`;
+}
+
+function Secrets({ names, defs, onChange, onClose }) {
+  const wanted = [...new Set(defs.flatMap((d) => d.permissions.secrets))].filter((n) => !names.includes(n));
+  const [name, setName] = useState(wanted[0] || "");
+  const [value, setValue] = useState("");
+  const [err, setErr] = useState(null);
+  const save = async (e) => {
+    e.preventDefault();
+    try {
+      await api("/secrets/" + encodeURIComponent(name), "PUT", { value });
+      setValue(""); setErr(null);
+      onChange(await api("/secrets"));
+    } catch (x) { setErr(x.message); }
+  };
+  const del = async (n) => { await api("/secrets/" + encodeURIComponent(n), "DELETE"); onChange(await api("/secrets")); };
+  return html`<${Modal} title="Secrets" onClose=${onClose}>
+    <p class="muted small">Secret values are stored on the server and never sent to the browser or to widgets. Widgets reference them as <code>{{secret.NAME}}</code> and the proxy fills them in for granted hosts only.</p>
+    <ul class="secret-list">
+      ${names.length === 0 && html`<li class="muted">No secrets yet</li>`}
+      ${names.map((n) => html`<li><code>${n}</code> <span class="muted">••••••</span>
+        <button class="ghost" onClick=${() => del(n)}>Delete</button></li>`)}
+    </ul>
+    <form class="secret-form" onSubmit=${save}>
+      <input placeholder="NAME" value=${name} list="wanted-secrets" required pattern="[A-Z][A-Z0-9_]{0,63}"
+             onInput=${(e) => setName(e.currentTarget.value.toUpperCase())} />
+      <datalist id="wanted-secrets">${wanted.map((n) => html`<option value=${n} />`)}</datalist>
+      <input type="password" placeholder="value" value=${value} required autocomplete="off"
+             onInput=${(e) => setValue(e.currentTarget.value)} />
+      <button type="submit">Save</button>
+    </form>
+    ${err && html`<div class="error small">${err}</div>`}
+  <//>`;
+}
+
+render(html`<${App} />`, document.getElementById("app"));
