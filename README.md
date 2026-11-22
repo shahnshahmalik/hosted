@@ -20,7 +20,8 @@ docker build -t hosted .
 docker run -d --name hosted -p 8080:8080 -v hosted-data:/data hosted
 ```
 
-Open http://localhost:8080.
+Open http://localhost:8080. A fresh install starts with the Neon Grid theme and a starter layout of
+the built-in widgets; change both in [`defaults/dashboard.json`](defaults/dashboard.json) before first run.
 
 ### Host stats in Docker
 

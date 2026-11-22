@@ -6,6 +6,7 @@ the look.
 
 - **Make your own:** copy any file here to `themes/<your-id>.json`, change `name` and the values,
   restart. It appears in the theme menu. (The assistant can also save custom themes for you.)
+- **Default:** a fresh install uses the theme named in `defaults/dashboard.json` (Neon Grid).
 - **Tokens:** `midnight.json` is the reference theme and lists every token. Other themes may omit
   tokens; missing ones fall back to midnight's value.
 - **Adding a token:** add it to `midnight.json` (with a sensible value), use it as `var(--name)` in

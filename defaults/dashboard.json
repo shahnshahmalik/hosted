@@ -1,0 +1,20 @@
+{
+  "_comment": "What a brand-new Hosted install starts with. Applied once, on first run; edit freely. Widgets reference types in widgets/ and themes in themes/.",
+  "theme": "neon-grid",
+  "widgets": [
+    { "type": "services",    "title": "Services",       "x": 0, "y": 0, "w": 6, "h": 4 },
+    { "type": "crypto",      "title": "Crypto",         "x": 6, "y": 0, "w": 3, "h": 3 },
+    { "type": "clock",       "title": "Clock",          "x": 9, "y": 0, "w": 3, "h": 2 },
+    { "type": "cpu",         "title": "Processor",      "x": 9, "y": 2, "w": 3, "h": 3 },
+    { "type": "memory",      "title": "Memory",         "x": 6, "y": 3, "w": 3, "h": 2 },
+    { "type": "cpu-temp",    "title": "CPU temp",       "x": 0, "y": 4, "w": 3, "h": 2 },
+    { "type": "disks",       "title": "Disks",          "x": 3, "y": 4, "w": 3, "h": 3 },
+    { "type": "weather",     "title": "Weather",        "x": 6, "y": 5, "w": 3, "h": 3 },
+    { "type": "system-info", "title": "System",         "x": 9, "y": 5, "w": 3, "h": 3 },
+    { "type": "notes",       "title": "Notes",          "x": 0, "y": 6, "w": 3, "h": 3 },
+    { "type": "hacker-news", "title": "Hacker News",    "x": 3, "y": 7, "w": 3, "h": 4 },
+    { "type": "currency",    "title": "Exchange rates", "x": 6, "y": 8, "w": 3, "h": 3 },
+    { "type": "countdown",   "title": "Countdown",      "x": 9, "y": 8, "w": 3, "h": 2 },
+    { "type": "github-repo", "title": "GitHub",         "x": 0, "y": 9, "w": 3, "h": 2 }
+  ]
+}

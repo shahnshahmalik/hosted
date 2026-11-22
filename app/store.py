@@ -12,7 +12,19 @@ DB_PATH = os.environ.get("HOSTED_DB") or os.environ.get("CANVAS_DB") or "data/ca
 ROOT = Path(__file__).resolve().parent.parent
 WIDGETS_DIR = ROOT / "widgets"
 THEMES_DIR = ROOT / "themes"
-DEFAULT_THEME = "midnight"  # the reference theme: defines every token
+REFERENCE_THEME = "midnight"  # defines every token; other themes fall back to its values
+DEFAULTS_FILE = ROOT / "defaults" / "dashboard.json"  # what a fresh install starts with
+
+
+def _load_defaults() -> dict:
+    try:
+        return json.loads(DEFAULTS_FILE.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+DEFAULTS = _load_defaults()
+DEFAULT_THEME = DEFAULTS.get("theme") or REFERENCE_THEME  # active theme until the user picks one
 
 COLS, MAX_ROWS = 12, 200
 SECRET_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
@@ -36,7 +48,7 @@ THEME_VALUE = re.compile(r"""^[#(),./%\w\s'"-]{1,600}$""")
 
 def _load_reference_tokens() -> dict:
     """The default theme file is the single source of truth for which tokens exist."""
-    return json.loads((THEMES_DIR / f"{DEFAULT_THEME}.json").read_text())["vars"]
+    return json.loads((THEMES_DIR / f"{REFERENCE_THEME}.json").read_text())["vars"]
 
 
 REFERENCE_VARS = _load_reference_tokens()
@@ -96,7 +108,7 @@ def migrate():
         old = c.execute("SELECT value FROM settings WHERE key='theme'").fetchone()
         if old and "id" not in json.loads(old["value"]):
             c.execute("UPDATE settings SET value=? WHERE key='theme'",
-                      (json.dumps({"id": DEFAULT_THEME, "overrides": json.loads(old["value"])}),))
+                      (json.dumps({"id": REFERENCE_THEME, "overrides": json.loads(old["value"])}),))
         c.commit()
 
 
@@ -432,7 +444,8 @@ def save_theme(c, theme_id, name, description, vars_, source):
 def active_theme(c) -> dict:
     """Effective theme = reference tokens <- selected theme <- per-dashboard overrides."""
     sel = get_setting(c, "theme", {}) or {}
-    theme = get_theme(c, sel.get("id") or DEFAULT_THEME) or get_theme(c, DEFAULT_THEME) or {"id": DEFAULT_THEME, "vars": {}}
+    theme = (get_theme(c, sel.get("id") or DEFAULT_THEME) or get_theme(c, REFERENCE_THEME)
+             or {"id": REFERENCE_THEME, "vars": {}})
     overrides = sel.get("overrides") or {}
     return {"id": theme["id"], "name": theme.get("name", theme["id"]), "overrides": overrides,
             "vars": {**REFERENCE_VARS, **theme["vars"], **overrides}}
@@ -453,3 +466,29 @@ def theme_css(vars_: dict) -> str:
 
 def secret_names(c):
     return [r["name"] for r in c.execute("SELECT name FROM secrets ORDER BY name")]
+
+
+def seed_default_dashboard():
+    """First run only: place the widgets from defaults/dashboard.json.
+
+    Runs once per database (tracked by the "seeded" setting), so clearing the dashboard later
+    doesn't bring the defaults back, and existing dashboards are never touched. The defaults are
+    builtin widgets chosen by whoever ships this install, so they are granted like a picker add.
+    """
+    with closing(db()) as c:
+        if get_setting(c, "seeded"):
+            return
+        if c.execute("SELECT 1 FROM widgets LIMIT 1").fetchone():
+            set_setting(c, "seeded", True)
+            return
+        for w in DEFAULTS.get("widgets", []):
+            try:
+                d = get_def(c, w.get("type"), with_code=False)
+                if not d or d["source"] != "builtin":
+                    continue
+                rect = {k: w[k] for k in ("x", "y", "w", "h")} if all(k in w for k in ("x", "y", "w", "h")) else None
+                create_widget(c, str(w.get("title") or d["name"])[:80],
+                              {"type": d["id"], "props": w.get("props") or {}}, rect, grant=True)
+            except (StoreError, KeyError, TypeError):
+                continue  # a bad entry in the defaults file must never stop the app from starting
+        set_setting(c, "seeded", True)

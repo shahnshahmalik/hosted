@@ -43,6 +43,7 @@ async def store_error(_, e: StoreError):
 store.migrate()
 store.seed_builtin_widgets()
 store.seed_themes()
+store.seed_default_dashboard()
 
 
 # ---------- widget types ----------

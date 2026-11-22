@@ -6,6 +6,7 @@ COPY app app
 COPY static static
 COPY widgets widgets
 COPY themes themes
+COPY defaults defaults
 ENV CANVAS_DB=/data/canvas.db
 VOLUME /data
 EXPOSE 8080
