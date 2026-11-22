@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - Renamed from Hosted to **LabCanvas** (repo, Docker image `ghcr.io/shahnshahmalik/labcanvas`,
   `LABCANVAS_*` environment variables; the old `HOSTED_*` names still work).
