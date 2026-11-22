@@ -39,10 +39,13 @@
           <div class="chart">${h.sparkline(pts, { width: 90, height: 30, color: ch >= 0 ? "var(--success)" : "var(--danger)" })}</div></div>`;
       }).join("")}</div><div class="foot muted">7-day trend · updated ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>`;
       await h.storage.set("last", out.innerHTML.slice(0, 60000));
+      await h.storage.set("lastAt", Date.now());
     } catch (e) {
+      // Keep showing the last good prices; only mention the error once they are stale (>15 min).
       const cached = await h.storage.get("last").catch(() => null);
-      if (cached && !out.querySelector(".rows")) out.innerHTML = cached;
-      out.insertAdjacentHTML("beforeend", `<div class="error foot">${esc(e.message)}</div>`);
+      if (cached && !out.querySelector(".rows")) { out.className = ""; out.innerHTML = cached; }
+      const age = Date.now() - ((await h.storage.get("lastAt").catch(() => 0)) || 0);
+      if (!cached || age > 15 * 60e3) out.insertAdjacentHTML("beforeend", `<div class="error foot">${esc(e.message)}</div>`);
     }
   }
   hosted.ready.then(async (h) => {

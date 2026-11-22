@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Python and JavaScript syntax
+        run: |
+          python3 -m compileall -q app
+          for f in static/*.js app/sdk.js; do node --check "$f"; done
+          python3 -c "import json,glob; [json.load(open(f)) for f in glob.glob('widgets/*/manifest.json') + glob.glob('themes/*.json') + ['defaults/dashboard.json']]"
+
+      - name: Build image
+        run: docker build -t hosted:ci .
+
+      - name: Smoke test
+        run: |
+          docker run -d --name hosted -p 8080:8080 hosted:ci
+          for i in $(seq 30); do curl -sf localhost:8080/api/theme >/dev/null && break; sleep 1; done
+          curl -sf localhost:8080/ | grep -q 'id="theme-vars"'
+          test "$(curl -sf localhost:8080/api/theme | jq -r .id)" = neon-grid
+          test "$(curl -sf localhost:8080/api/widget-defs | jq length)" -ge 14
+          test "$(curl -sf localhost:8080/api/widgets | jq length)" -ge 1
+          wid=$(curl -sf localhost:8080/api/widgets | jq -r '.[0].id')
+          curl -sfI localhost:8080/frame/$wid | grep -qi "content-security-policy: default-src 'none'"
+          curl -sf localhost:8080/fonts/space-grotesk.woff2 -o /dev/null
+
+      - name: Server logs
+        if: always()
+        run: docker logs hosted || true

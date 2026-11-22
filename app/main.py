@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import ai, plugins, store, system
+from . import __version__, ai, plugins, store, system
 from .proxy import ProxyError, proxy_request
 from .store import StoreError, db
 
@@ -21,7 +21,7 @@ FONTS_CSS = (STATIC / "fonts" / "fonts.css").read_text()
 STORAGE_MAX_VALUE = 64 * 1024
 STORAGE_MAX_KEYS = 100
 
-app = FastAPI(title="Hosted")
+app = FastAPI(title="Hosted", version=__version__)
 
 
 @app.middleware("http")
