@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- Fix: after upgrading, browsers could keep running the previous version's scripts and styles
+  (for example system widgets showing "unknown call system"). Scripts and stylesheets are now
+  loaded with a content-hash version, cached long-term, and always refreshed after an upgrade.
+
 ## 0.1.0 (first public release)
 
 - 12-column drag-and-resize grid with persistence in SQLite

@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import html
 import io
 import json
@@ -25,12 +26,26 @@ app = FastAPI(title="Hosted", version=__version__)
 
 
 @app.middleware("http")
-async def font_cors(request: Request, call_next):
-    """Widget frames have an opaque origin, and font loads are CORS requests: allow them for /fonts/ only."""
+async def static_headers(request: Request, call_next):
+    """Caching for static files, and CORS for fonts.
+
+    The page loads every script and stylesheet as "<path>?v=<ASSET_VERSION>", so those responses
+    can be cached forever: an upgrade changes the version and browsers fetch the new files.
+    Unversioned requests must revalidate, so a stale copy is never used without asking.
+    """
     response = await call_next(request)
-    if request.url.path.startswith("/fonts/"):
+    path = request.url.path
+    if path.startswith(("/api/", "/frame/")) or path == "/":
+        return response  # these set their own headers
+    if path.startswith("/fonts/"):
+        # Widget frames have an opaque origin and font loads are CORS requests.
         response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Cache-Control"] = "public, max-age=86400"
+    if request.query_params.get("v") == ASSET_VERSION:
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif path.startswith("/fonts/") and path.endswith(".woff2"):
+        response.headers["Cache-Control"] = "public, max-age=604800"
+    else:
+        response.headers["Cache-Control"] = "no-cache"
     return response
 
 
@@ -439,7 +454,17 @@ def frame(wid: str, request: Request):
     })
 
 
-INDEX_HTML = (STATIC / "index.html").read_text()
+def _asset_version() -> str:
+    """Short hash of every file under static/: changes whenever any of them changes."""
+    h = hashlib.sha256()
+    for f in sorted(p for p in STATIC.rglob("*") if p.is_file()):
+        h.update(str(f.relative_to(STATIC)).encode())
+        h.update(f.read_bytes())
+    return h.hexdigest()[:12]
+
+
+ASSET_VERSION = _asset_version()
+INDEX_HTML = (STATIC / "index.html").read_text().replace("{{v}}", ASSET_VERSION)
 
 
 @app.get("/")
