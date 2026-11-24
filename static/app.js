@@ -8,6 +8,29 @@ import { Editor } from "/editor.js";
 const html = htm.bind(h);
 const COLS = 12, GAP = 12, ROW = 80;
 
+const COMPACT = 700; // below this grid width, widgets stack in one or two columns (phones, small tablets)
+
+// Phone layout: keep the saved 12-column layout untouched and derive a stacked one from it,
+// in reading order (top to bottom, left to right). Wide widgets span the full width.
+function stackLayout(widgets, width) {
+  const cols = width < 480 ? 1 : 2;
+  const colW = (width - GAP * (cols - 1)) / cols;
+  const tops = Array(cols).fill(0);
+  const pos = {};
+  for (const w of [...widgets].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    const span = cols === 1 || w.w > 6 ? cols : 1;
+    const height = w.h * ROW + (w.h - 1) * GAP;
+    let col = 0, top = Infinity;
+    for (let c = 0; c + span <= cols; c++) {
+      const t = Math.max(...tops.slice(c, c + span));
+      if (t < top) { top = t; col = c; }
+    }
+    pos[w.id] = { left: col * (colW + GAP), top, width: span * colW + (span - 1) * GAP, height };
+    for (let c = col; c < col + span; c++) tops[c] = top + height + GAP;
+  }
+  return { pos, height: Math.max(0, ...tops) };
+}
+
 const css = (r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v + "px"])); // Preact 11 won't add px
 
 const overlaps = (a, b) =>
@@ -34,7 +57,7 @@ function App() {
   const [drag, setDrag] = useState(null);
   const [theme, setTheme] = useState({ vars: {} }); // {id, name, overrides, vars}
   const [themes, setThemes] = useState([]);
-  const [chatOpen, setChatOpen] = useState(localStorage.getItem("hosted.chat") === "1");
+  const [chatOpen, setChatOpen] = useState(localStorage.getItem("hosted.chat") === "1" && innerWidth > 760); // a full-screen sheet on phones, so don't reopen it there
   const [nonces, setNonces] = useState({}); // wid -> manual reload counter (part of the frame key)
   const gridRef = useRef();
   const frames = useRef({}); // wid -> iframe element
@@ -150,6 +173,8 @@ function App() {
     width: w.w * cw + (w.w - 1) * GAP, height: w.h * ROW + (w.h - 1) * GAP,
   });
   const rows = Math.max(6, ...widgets.map((w) => w.y + w.h + 1));
+  const compact = width < COMPACT; // no drag/resize here: touch drags would fight page scrolling
+  const stacked = compact && stackLayout(widgets, width);
 
   const queue = useRef(Promise.resolve()); // serialise adds so rapid clicks get distinct slots
   const add = (def) => (queue.current = queue.current.then(() => doAdd(def)).catch((e) => alert(e.message)));
@@ -232,12 +257,13 @@ function App() {
     </header>
     <div class="body">
     <main>
-    <div class=${"grid" + (drag ? " is-dragging" : "")} ref=${gridRef} style=${css({ height: rows * (ROW + GAP) })}
+    <div class=${"grid" + (drag ? " is-dragging" : "") + (compact ? " compact" : "")} ref=${gridRef}
+         style=${css({ height: compact ? stacked.height : rows * (ROW + GAP) })}
          onPointerMove=${move} onPointerUp=${end}>
       ${slot && slotOk && html`<div class="ghost-slot" style=${css(px(slot))}></div>`}
       ${widgets.map((w) => {
         const isDrag = drag && drag.id === w.id;
-        const style = px(w);
+        const style = compact ? { ...stacked.pos[w.id] } : px(w);
         if (isDrag && drag.mode === "move") { style.left += drag.dx; style.top += drag.dy; }
         if (isDrag && drag.mode === "resize") {
           style.width = Math.max(cw, style.width + drag.dx);
@@ -250,7 +276,7 @@ function App() {
         const missing = (w.grants?.secrets || []).filter((n) => !secretNames.includes(n));
         return html`
           <div key=${w.id} class=${"widget framed" + (isDrag ? " dragging" : "")} style=${css(style)} data-wid=${w.id}>
-            <div class="widget-head" onPointerDown=${(e) => start(e, w, "move")}>
+            <div class="widget-head" onPointerDown=${compact ? undefined : (e) => start(e, w, "move")}>
               <span class="title">${w.title}</span>
               <span class="tools" onPointerDown=${(e) => e.stopPropagation()}>
                 <a class="ghost icon-btn" title="Edit with AI" href=${"/edit/" + w.id}>✎</a>
@@ -278,7 +304,7 @@ function App() {
                     title=${w.title}
                     ref=${(el) => { if (el) frames.current[w.id] = el; }}
                     onLoad=${(e) => onFrameLoad(w.id, fk, e.currentTarget)}></iframe>
-            <div class="resize" onPointerDown=${(e) => start(e, w, "resize")}></div>
+            ${!compact && html`<div class="resize" onPointerDown=${(e) => start(e, w, "resize")}></div>`}
           </div>`;
       })}
     </div>

@@ -121,9 +121,24 @@ header h1 span { color: var(--accent); }
 .chat-input textarea { flex: 1; resize: none; padding: 8px; }
 .ai-settings { padding: 12px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--border); }
 
+/* ---------- phones and small tablets ---------- */
+.grid.compact .widget-head { cursor: default; touch-action: auto; }
 @media (max-width: 760px) {
-  .body { flex-direction: column-reverse; }
-  .chat { width: auto; height: 60vh; position: static; margin: 0 20px 20px; align-self: stretch; }
+  header { flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
+  .actions { flex-wrap: wrap; gap: 6px; }
+  .grid { margin: 0 10px 24px; }
+  /* The assistant becomes a full-screen sheet over the dashboard. */
+  .chat { position: fixed; inset: 0; width: auto; height: 100vh; height: 100dvh; margin: 0; border-radius: 0;
+    clip-path: none; z-index: 50; }
+  .modal { width: 100vw; max-height: 92dvh; padding: 14px; }
+  .def { flex-wrap: wrap; }
+  /* iOS zooms into inputs smaller than 16px when they get focus. */
+  input, select, textarea { font-size: 16px; }
+}
+/* Bigger tap targets on touch screens. */
+@media (pointer: coarse) {
+  .widget-head .tools button, .widget-head .icon-btn { padding: 4px 10px; }
+  .chat-head button { padding: 6px 10px; }
 }
 
 /* ---------- widget library / plugins ---------- */
@@ -171,4 +186,12 @@ button.small, .linkbtn { padding: 2px 8px; font-size: 12px; }
 .edit-chat { display: flex; flex-direction: column; min-height: 0; border-radius: var(--radius); overflow: hidden; }
 @media (max-width: 900px) {
   .editor { grid-template-columns: 1fr; grid-template-rows: minmax(60vh, 1fr) 50vh; height: auto; min-height: 100vh; }
+}
+@media (max-width: 760px) {
+  .editor { padding: 8px; gap: 8px; grid-template-rows: 75dvh 70dvh; }
+  .editor-bar { padding: 8px 10px; gap: 8px; }
+  .editor-actions { flex-wrap: wrap; }
+  .code-area { margin: 0 8px 8px; }
+  .preview-stage { padding: 10px; }
+  .preview-card { width: 100% !important; }
 }
