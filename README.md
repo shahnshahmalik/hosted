@@ -40,6 +40,10 @@ docker run -d --name labcanvas -p 8080:8080 -v labcanvas-data:/data ghcr.io/shah
 Then open **http://localhost:8080**. A fresh install starts with the Neon Grid theme and a starter
 layout. To try the assistant, click **✦ Assistant**, open its settings and add your API key.
 
+LabCanvas works on phones too and can be installed as an app (*Install* in Chrome or Edge, *Add to
+Home Screen* on iOS). Browsers only offer installing over **https://** or on localhost, so put it
+behind your reverse proxy with a certificate.
+
 <details>
 <summary><b>Docker Compose</b></summary>
 

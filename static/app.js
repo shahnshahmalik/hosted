@@ -548,3 +548,6 @@ function Secrets({ names, defs, onChange, onClose }) {
 
 const editMatch = location.pathname.match(/^\/edit\/([\w-]+)$/);
 render(editMatch ? html`<${Editor} wid=${editMatch[1]} />` : html`<${App} />`, document.getElementById("app"));
+
+// Installable as an app (PWA). Browsers only allow this on https:// or localhost.
+if ("serviceWorker" in navigator && isSecureContext) navigator.serviceWorker.register("/sw.js").catch(() => {});

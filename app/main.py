@@ -3,6 +3,7 @@ import hashlib
 import html
 import io
 import json
+import mimetypes
 import secrets as pysecrets
 import time
 import zipfile
@@ -23,6 +24,8 @@ SDK_JS = (Path(__file__).parent / "sdk.js").read_text()
 FONTS_CSS = (STATIC / "fonts" / "fonts.css").read_text()
 STORAGE_MAX_VALUE = 64 * 1024
 STORAGE_MAX_KEYS = 100
+
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 app = FastAPI(title="LabCanvas", version=__version__)
 

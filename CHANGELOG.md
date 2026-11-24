@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Works on phones: widgets stack in one or two columns, the assistant opens full screen and touch
+  scrolling no longer starts a drag. Your desktop layout is unchanged.
+- New app icon and favicon. LabCanvas is now an installable app (PWA) with an offline page when the
+  server can't be reached. Installing needs https:// (or localhost).
+
 ## 0.2.0
 
 - Renamed from Hosted to **LabCanvas** (repo, Docker image `ghcr.io/shahnshahmalik/labcanvas`,
